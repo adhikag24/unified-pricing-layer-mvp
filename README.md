@@ -12,6 +12,43 @@ This prototype simulates the complete data flow from producer events through Ord
 - **Append-only storage** with immutable audit trails
 - **Component lineage tracking** through refunds and repricing
 
+## Key Files
+
+### Core Application Files
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| [app.py](app.py) | ~262 | Main Streamlit entry point with 6-page navigation |
+| [src/models/events.py](src/models/events.py) | ~200+ | Producer event schemas (11 event types, 11+ component types) |
+| [src/models/normalized.py](src/models/normalized.py) | ~150+ | Normalized storage models with dual IDs & versions |
+| [src/ingestion/pipeline.py](src/ingestion/pipeline.py) | ~400+ | Order Core ingestion: validation, routing, normalization |
+| [src/ingestion/id_generator.py](src/ingestion/id_generator.py) | ~167 | Dual ID strategy implementation (semantic + instance) |
+| [src/storage/database.py](src/storage/database.py) | ~500+ | SQLite schema with fact tables & derived views |
+| [src/ui/producer_playground.py](src/ui/producer_playground.py) | - | Event emission UI for all producer services |
+| [src/ui/order_explorer.py](src/ui/order_explorer.py) | - | Order browsing with lineage & timeline visualization |
+| [src/ui/stress_tests.py](src/ui/stress_tests.py) | - | Edge case testing (out-of-order, duplicates, validation) |
+
+### Test Files
+
+| File | Purpose |
+|------|---------|
+| [tests/test_b2b_real_files.py](tests/test_b2b_real_files.py) | B2B affiliate integration using real production payloads |
+| [tests/test_rebooking_flow.py](tests/test_rebooking_flow.py) | Status-driven obligations & supplier rebooking scenarios |
+| [tests/test_refund_issued.py](tests/test_refund_issued.py) | Refund component lineage tracking |
+| [tests/test_payment_fee_scenario.py](tests/test_payment_fee_scenario.py) | Payment transaction fee handling |
+| [tests/test_b2b_affiliate.py](tests/test_b2b_affiliate.py) | Manual affiliate flow construction |
+
+### Test Data & Documentation
+
+| Directory/File | Contents |
+|----------------|----------|
+| [components-helper/b2b_affiliate_case/](components-helper/b2b_affiliate_case/) | Real B2B event sequence (7 events: pricing → payment → supplier → refund) |
+| [components-helper/train_case_va/](components-helper/train_case_va/) | Train booking test case (4 events) |
+| [components-helper/multi_order_detail_case/](components-helper/multi_order_detail_case/) | Multi-detail booking scenario |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design & data flow documentation |
+| [QUICKSTART.md](QUICKSTART.md) | 5-minute setup guide |
+| [B2B_AFFILIATE_GUIDE.md](B2B_AFFILIATE_GUIDE.md) | B2B affiliate feature documentation |
+
 ## Features
 
 ### 🎮 Producer Playground
@@ -107,39 +144,95 @@ See `tests/README.md` for detailed test documentation.
 ## Project Structure
 
 ```
-prototype/
-├── app.py                          # Main Streamlit application
-├── requirements.txt                # Python dependencies
+pricing-read/
+├── app.py                          # Main Streamlit application entry point
+├── requirements.txt                # Python dependencies (streamlit, pydantic, pandas, plotly)
+├── run.sh                          # Quick-start bash script (setup + launch)
 ├── .gitignore                      # Git ignore rules
-├── README.md                       # This file
-├── ARCHITECTURE.md                 # System design documentation
-├── CHANGELOG.md                    # Version history
-├── QUICKSTART.md                   # Getting started guide
-├── B2B_AFFILIATE_GUIDE.md          # B2B affiliate feature docs
-├── IMPLEMENTATION_SUMMARY.md       # Technical summary
-├── SCHEMA_COMPATIBILITY_SUMMARY.md # Schema reference
-├── src/
-│   ├── models/
+│
+├── Documentation/
+│   ├── README.md                       # This file - main project documentation
+│   ├── ARCHITECTURE.md                 # System design & data flow
+│   ├── QUICKSTART.md                   # Getting started guide (5-minute setup)
+│   ├── B2B_AFFILIATE_GUIDE.md          # B2B affiliate feature documentation
+│   ├── IMPLEMENTATION_SUMMARY.md       # Technical implementation details
+│   ├── SCHEMA_COMPATIBILITY_SUMMARY.md # Event & model schema reference
+│   ├── CHANGELOG.md                    # Version history & release notes
+│   └── CLEANUP_SUMMARY.md              # Cleanup & refactoring notes
+│
+├── src/                            # Core Application Code
+│   ├── models/                     # Data Models
 │   │   ├── events.py              # Producer event schemas (Pydantic)
+│   │   │                          # - 11 event types, 11+ component types
+│   │   │                          # - PricingUpdated, Payment, Supplier, Refund events
+│   │   │                          # - Context models (Customer, Entity, FX)
 │   │   └── normalized.py          # Normalized storage models
-│   ├── ingestion/
-│   │   ├── pipeline.py            # Order Core ingestion logic
-│   │   └── id_generator.py        # Dual ID generation (semantic + instance)
-│   ├── storage/
-│   │   └── database.py            # SQLite schema and queries
-│   └── ui/
-│       ├── producer_playground.py # Producer event emission UI
-│       ├── order_explorer.py      # Order browsing and exploration UI
-│       └── stress_tests.py        # Edge case testing UI
-├── tests/                          # Test suite (organized)
+│   │                              # - Enriched with dual IDs & versions
+│   │                              # - DLQ entry model
+│   │
+│   ├── ingestion/                 # Event Processing
+│   │   ├── pipeline.py            # Order Core ingestion logic (~400 lines)
+│   │   │                          # - Event validation, routing, normalization
+│   │   │                          # - Version assignment per family
+│   │   │                          # - DLQ handling for failures
+│   │   └── id_generator.py        # Dual ID generation strategy
+│   │                              # - Semantic ID: stable logical identity
+│   │                              # - Instance ID: unique per snapshot
+│   │
+│   ├── storage/                   # Data Persistence
+│   │   └── database.py            # SQLite wrapper (~500 lines)
+│   │                              # - Fact tables: pricing, payment, supplier, refund, dlq
+│   │                              # - Derived views for latest state
+│   │                              # - Query methods for all entities
+│   │
+│   └── ui/                        # Streamlit UI Components
+│       ├── producer_playground.py # Event emission interface
+│       │                          # - Sample events (hotel, flight, train, transfer)
+│       │                          # - Payment & refund event editors
+│       ├── order_explorer.py      # Data visualization & browsing
+│       │                          # - Latest pricing, version history
+│       │                          # - Component lineage, payment/supplier timelines
+│       └── stress_tests.py        # Edge case testing
+│                                  # - Out-of-order, duplicates, validation errors
+│
+├── tests/                          # Test Suite
 │   ├── README.md                   # Test documentation
-│   ├── test_b2b_real_files.py      # B2B affiliate integration
-│   ├── test_rebooking_flow.py      # Status-driven obligations
-│   ├── test_refund_issued.py       # Refund lineage
-│   ├── test_payment_fee_scenario.py# Payment fees
-│   └── test_b2b_affiliate.py       # Manual affiliate flow
-└── data/
-    └── uprl.db                     # SQLite database (gitignored)
+│   ├── test_b2b_real_files.py      # B2B affiliate integration (uses real payloads)
+│   ├── test_rebooking_flow.py      # Status-driven obligations & rebooking
+│   ├── test_refund_issued.py       # Refund component lineage
+│   ├── test_payment_fee_scenario.py# Payment transaction fees
+│   └── test_b2b_affiliate.py       # Manual affiliate flow construction
+│
+├── components-helper/              # Test Data & Documentation
+│   ├── b2b_affiliate_case/         # Real B2B event sequence (7 events)
+│   │   ├── 1_pricingUpdated.json
+│   │   ├── 1b_pricingUpdated_paymentFee.json
+│   │   ├── 2_paymentAuth.json
+│   │   ├── 3_paymentCaptured.json
+│   │   ├── 4_issuanceSupplierLifecycle.json
+│   │   ├── 5_issuanceCancelledtoSupplier.json
+│   │   ├── 6_issuanceUpdatetoExpedia.json
+│   │   ├── 7_refundIssued.json
+│   │   └── instrument.json         # Masked payment instrument
+│   │
+│   ├── train_case_va/              # Train booking test case (4 events)
+│   │   ├── 1_pricingUpdated_train.json
+│   │   ├── 2_paymentAuth.json
+│   │   ├── 3_paymentCaptured.json
+│   │   └── 4_issuanceSupplierLifecycle.json
+│   │
+│   ├── multi_order_detail_case/    # Multi-detail booking scenario
+│   │   └── 1_pricingUpdated_multi_detail.json
+│   │
+│   ├── db_improvement.md           # Database schema enhancement notes
+│   ├── refundInstruction.md        # Refund processing guide
+│   ├── accomRoomRateInfo.txt       # Room rate information format
+│   └── orderCartFlight.txt         # Flight booking format
+│
+├── data/
+│   └── uprl.db                     # SQLite database (created at runtime, gitignored)
+│
+└── venv/                           # Python virtual environment (gitignored)
 ```
 
 ## Key Concepts
