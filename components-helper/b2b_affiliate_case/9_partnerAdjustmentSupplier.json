@@ -1,0 +1,33 @@
+{
+    "event_id": "evt_supplier_penalty_001",
+    "event_type": "PartnerAdjustmentEvent",
+    "schema_version": "partner.adjustment.v1",
+    "order_id": "1200496236",
+    "order_detail_id": "1200917821",
+    "emitted_at": "2025-07-31T16:00:00Z",
+    "emitter_service": "salesforce-ops",
+    "idempotency_key": "sf_supplier_penalty_NATIVE_20250731",
+    "party": {
+      "party_type": "SUPPLIER",
+      "party_id": "EXPEDIA",
+      "party_name": "EXPEDIA"
+    },
+    "line": {
+      "obligation_type": "SUPPLIER_COMPENSATION",
+      "amount": 750000,
+      "amount_effect": "INCREASES_PAYABLE",
+      "currency": "IDR",
+      "calculation": {
+        "basis": "service_failure",
+        "rate": 1.0
+      },
+      "description": "Compensation for booking error - Tiket internal mistake - Case SF-2025-00456"
+    },
+    "meta": {
+      "salesforce_case_id": "SF-2025-00456",
+      "incident_type": "internal_booking_error",
+      "approved_by": "finance-manager@tiket.com",
+      "approval_date": "2025-07-31T15:30:00Z",
+      "original_supplier_ref": "1859696"
+    }
+  }
