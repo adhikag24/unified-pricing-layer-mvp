@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from src.models.events import (
     PricingUpdatedEvent, PaymentLifecycleEvent, SupplierLifecycleEvent,
-    RefundLifecycleEvent, RefundIssuedEvent, EventType
+    RefundLifecycleEvent, RefundIssuedEvent, PartnerAdjustmentEvent, EventType
 )
 from src.models.normalized import (
     NormalizedPricingComponent, NormalizedPaymentTimeline,
@@ -59,8 +59,15 @@ class IngestionPipeline:
                                 EventType.PAYMENT_SETTLED, "PaymentLifecycle"]:
                 return self._ingest_payment_lifecycle(event_data)
             elif event_type in [EventType.SUPPLIER_ORDER_CONFIRMED, EventType.SUPPLIER_ORDER_ISSUED,
-                                EventType.SUPPLIER_INVOICE_RECEIVED, "IssuanceSupplierLifecycle"]:
-                return self._ingest_supplier_lifecycle(event_data)
+                                EventType.SUPPLIER_INVOICE_RECEIVED, "IssuanceSupplierLifecycle", "SupplierLifecycleEvent"]:
+                # Route based on schema_version
+                schema_version = event_data.get('schema_version', '')
+                if 'v2' in schema_version:
+                    return self._ingest_supplier_lifecycle_v2(event_data)
+                else:
+                    return self._ingest_supplier_lifecycle(event_data)
+            elif event_type == "PartnerAdjustmentEvent":
+                return self._ingest_partner_adjustment(event_data)
             elif event_type in [EventType.REFUND_INITIATED, EventType.REFUND_CLOSED]:
                 return self._ingest_refund_lifecycle(event_data)
             else:
@@ -522,6 +529,29 @@ class IngestionPipeline:
                         self.db.insert_payable_line(tax_line)
                         payable_count += 1
 
+                # 4. If supplier_commission exists, insert commission payable to supplier
+                if event.supplier.supplier_commission:
+                    commission = event.supplier.supplier_commission
+                    supplier_commission_line = {
+                        'line_id': f"{normalized.event_id}_SUPPLIER_COMMISSION",
+                        'event_id': normalized.event_id,
+                        'order_id': event.order_id,
+                        'order_detail_id': event.order_detail_id,
+                        'supplier_timeline_version': supplier_timeline_version,  # Assigned by Order Core
+                        'obligation_type': 'SUPPLIER_COMMISSION',
+                        'party_id': supplier_id,
+                        'party_name': supplier_id,
+                        'amount': int(commission.amount) if isinstance(commission.amount, float) else commission.amount,
+                        'currency': commission.currency,
+                        'calculation_basis': commission.basis if commission.basis else commission.commission_type,
+                        'calculation_rate': commission.rate,
+                        'calculation_description': commission.description or f"{commission.commission_type}",
+                        'ingested_at': ingested_at,
+                        'metadata': None
+                    }
+                    self.db.insert_payable_line(supplier_commission_line)
+                    payable_count += 1
+
             return IngestionResult(
                 success=True,
                 message=f"Ingested supplier event: {event.event_type}" + (f" with {payable_count} payable lines" if payable_count > 0 else ""),
@@ -532,6 +562,203 @@ class IngestionPipeline:
                     'supplier_id': supplier_id,
                     'amount': amount,
                     'payable_lines': payable_count
+                }
+            )
+
+        except ValidationError as e:
+            return self._send_to_dlq(
+                event_data, "VALIDATION_ERROR", f"Validation failed: {str(e)}"
+            )
+
+    def _ingest_supplier_lifecycle_v2(self, event_data: Dict[str, Any]) -> IngestionResult:
+        """
+        Handle supplier timeline events v2 (producer event with multi-party payables).
+        NORMALIZATION: Assigns supplier_timeline_version during ingestion.
+        NEW: Extracts parties array and creates payable lines with amount_effect.
+        """
+        try:
+            event = SupplierLifecycleEvent(**event_data)
+
+            # NORMALIZATION STEP: Assign supplier_timeline_version (monotonic per order_detail)
+            latest_supplier_version = self.db.get_latest_supplier_timeline_version(
+                event.order_id, event.order_detail_id
+            )
+            supplier_timeline_version = (latest_supplier_version or 0) + 1
+
+            ingested_at = datetime.utcnow().isoformat()
+
+            # Extract from nested supplier object
+            supplier_id = event.supplier.supplier_id
+            booking_code = event.supplier.booking_code
+            supplier_reference_id = event.supplier.supplier_ref
+            amount = event.supplier.amount_due
+            amount_basis_val = event.supplier.amount_basis
+            amount_basis = amount_basis_val.value if hasattr(amount_basis_val, 'value') else amount_basis_val if amount_basis_val else None
+            currency = event.supplier.currency
+            status = event.supplier.status
+
+            # Extract cancellation fee if present
+            cancellation_fee_amount = None
+            cancellation_fee_currency = None
+            if event.supplier.cancellation:
+                cancellation_fee_amount = event.supplier.cancellation.fee_amount
+                cancellation_fee_currency = event.supplier.cancellation.fee_currency
+
+            # Extract FX context and entity context as JSON strings
+            fx_context_json = None
+            if event.supplier.fx_context:
+                import json
+                fx_context_json = json.dumps(event.supplier.fx_context.model_dump())
+
+            entity_context_json = None
+            if event.supplier.entity_context:
+                import json
+                entity_context_json = json.dumps(event.supplier.entity_context.model_dump())
+
+            # Handle emitted_at as string or datetime
+            emitted_at_str = event.emitted_at if isinstance(event.emitted_at, str) else event.emitted_at.isoformat()
+
+            normalized = NormalizedSupplierTimeline(
+                event_id=event.event_id or str(uuid.uuid4()),
+                order_id=event.order_id,
+                order_detail_id=event.order_detail_id,
+                supplier_timeline_version=supplier_timeline_version,  # Assigned by Order Core
+                event_type=event.event_type,
+                supplier_id=supplier_id,
+                booking_code=booking_code,
+                supplier_reference_id=supplier_reference_id,
+                amount=amount,
+                currency=currency,
+                status=status,
+                cancellation_fee_amount=cancellation_fee_amount,
+                cancellation_fee_currency=cancellation_fee_currency,
+                emitter_service=event.emitter_service or "supplier-service",
+                ingested_at=ingested_at,
+                emitted_at=emitted_at_str,
+                metadata=event.meta if event.meta else event.metadata
+            )
+
+            # Insert supplier timeline with NEW fields (amount_basis, fx_context, entity_context)
+            timeline_dict = normalized.model_dump()
+            timeline_dict['amount_basis'] = amount_basis
+            timeline_dict['fx_context'] = fx_context_json
+            timeline_dict['entity_context'] = entity_context_json
+            self.db.insert_supplier_timeline(timeline_dict)
+
+            # Extract and insert payable lines from parties array (NEW v2 structure)
+            payable_count = 0
+            if event.parties:
+                for party in event.parties:
+                    party_type = party.party_type  # NEW: Extract party_type
+                    party_id = party.party_id
+                    party_name = party.party_name
+
+                    for line in party.lines:
+                        # Extract amount_effect enum value
+                        amount_effect_val = line.amount_effect
+                        amount_effect = amount_effect_val.value if hasattr(amount_effect_val, 'value') else amount_effect_val
+
+                        # Extract obligation_type enum value
+                        obligation_type_val = line.obligation_type
+                        obligation_type = obligation_type_val.value if hasattr(obligation_type_val, 'value') else obligation_type_val
+
+                        payable_line = {
+                            'line_id': str(uuid.uuid4()),
+                            'event_id': normalized.event_id,
+                            'order_id': event.order_id,
+                            'order_detail_id': event.order_detail_id,
+                            'supplier_timeline_version': supplier_timeline_version,  # Assigned by Order Core
+                            'obligation_type': obligation_type,
+                            'party_type': party_type,  # NEW: Store party_type
+                            'party_id': party_id,
+                            'party_name': party_name,
+                            'amount': int(line.amount) if isinstance(line.amount, float) else line.amount,
+                            'amount_effect': amount_effect,  # INCREASES_PAYABLE or DECREASES_PAYABLE
+                            'currency': line.currency,
+                            'calculation_basis': line.calculation.get('basis') if line.calculation else None,
+                            'calculation_rate': line.calculation.get('rate') if line.calculation else None,
+                            'calculation_description': line.description,
+                            'ingested_at': ingested_at,
+                            'metadata': None
+                        }
+                        self.db.insert_payable_line(payable_line)
+                        payable_count += 1
+
+            return IngestionResult(
+                success=True,
+                message=f"Ingested supplier event v2: {event.event_type}" + (f" with {payable_count} payable lines" if payable_count > 0 else " (no parties - projection-based)"),
+                details={
+                    'event_id': normalized.event_id,
+                    'order_id': event.order_id,
+                    'order_detail_id': event.order_detail_id,
+                    'supplier_id': supplier_id,
+                    'amount': amount,
+                    'amount_basis': amount_basis,
+                    'payable_lines': payable_count
+                }
+            )
+
+        except ValidationError as e:
+            return self._send_to_dlq(
+                event_data, "VALIDATION_ERROR", f"Validation failed: {str(e)}"
+            )
+
+    def _ingest_partner_adjustment(self, event_data: Dict[str, Any]) -> IngestionResult:
+        """
+        Handle standalone partner adjustment events (no supplier timeline version).
+        These obligations persist regardless of supplier status (version = -1).
+        """
+        try:
+            event = PartnerAdjustmentEvent(**event_data)
+
+            ingested_at = datetime.utcnow().isoformat()
+
+            # Extract party info
+            party_type = event.party.get('party_type')
+            party_id = event.party.get('party_id')
+            party_name = event.party.get('party_name')
+
+            # Extract line info
+            line = event.line
+            amount_effect_val = line.amount_effect
+            amount_effect = amount_effect_val.value if hasattr(amount_effect_val, 'value') else amount_effect_val
+
+            obligation_type_val = line.obligation_type
+            obligation_type = obligation_type_val.value if hasattr(obligation_type_val, 'value') else obligation_type_val
+
+            # Create payable line with version = -1 (standalone, always included)
+            payable_line = {
+                'line_id': str(uuid.uuid4()),
+                'event_id': event.event_id or str(uuid.uuid4()),
+                'order_id': event.order_id,
+                'order_detail_id': event.order_detail_id,
+                'supplier_timeline_version': -1,  # Standalone adjustment (no timeline linkage)
+                'obligation_type': obligation_type,
+                'party_type': party_type,  # NEW: Store party_type
+                'party_id': party_id,
+                'party_name': party_name,
+                'amount': int(line.amount) if isinstance(line.amount, float) else line.amount,
+                'amount_effect': amount_effect,
+                'currency': line.currency,
+                'calculation_basis': line.calculation.get('basis') if line.calculation else None,
+                'calculation_rate': line.calculation.get('rate') if line.calculation else None,
+                'calculation_description': line.description,
+                'ingested_at': ingested_at,
+                'metadata': event.meta if event.meta else None
+            }
+            self.db.insert_payable_line(payable_line)
+
+            return IngestionResult(
+                success=True,
+                message=f"Ingested partner adjustment: {obligation_type} for {party_type}",
+                details={
+                    'event_id': payable_line['event_id'],
+                    'order_id': event.order_id,
+                    'order_detail_id': event.order_detail_id,
+                    'party_id': party_id,
+                    'obligation_type': obligation_type,
+                    'amount': line.amount,
+                    'amount_effect': amount_effect
                 }
             )
 

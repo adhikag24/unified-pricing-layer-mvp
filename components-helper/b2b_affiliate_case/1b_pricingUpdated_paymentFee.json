@@ -43,10 +43,6 @@
       "description": "Payment gateway transaction fee"
     }
   ],
-  "totals": {
-    "customer_total": 296223,
-    "currency": "IDR"
-  },
   "meta": {
     "trigger": "payment_method_selected",
     "emitter_service": "payment-core",

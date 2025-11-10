@@ -4,7 +4,7 @@
     "order_id": "1327314937",
     "vertical": "train",
     "emitted_at": "2025-11-03T23:47:46.022316",
-    "emitter_service": "train-service",
+    "emitter_service": "payment-service",
     "customer_context": {
       "reseller_type_name": "B2C",
       "reseller_id": null,
@@ -31,38 +31,16 @@
     },
     "components": [
       {
-        "component_type": "BaseFare",
-        "amount": 795000,
+        "component_type": "TransactionFee",
+        "amount": 10000,
         "currency": "IDR",
-        "dimensions": {
-          "order_detail_id": "1365755656",
-          "profile_id": "216709946"
+        "dimensions": {},
+        "meta": {
+          "payment_method": "VA_MANDIRI",
+          "fee_type": "payment_gateway_fee",
+          "notes": "Payment processing fee for VA Mandiri",
+          "applicable_scope": "order"
         }
-      },
-      {
-        "component_type": "BaseFare",
-        "amount": 795000,
-        "currency": "IDR",
-        "dimensions": {
-          "order_detail_id": "1365755656",
-          "profile_id": "255146342"
-        }
-      },
-      {
-        "component_type": "PlatformFee",
-        "amount": 17000,
-        "currency": "IDR",
-        "dimensions": {}
-      },
-      {
-        "component_type": "ConvenienceFee",
-        "amount": 7500,
-        "currency": "IDR",
-        "dimensions": {}
       }
-    ],
-    "totals": {
-      "customer_total": 1614500,
-      "currency": "IDR"
-    }
+    ]
   }

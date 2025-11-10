@@ -41,6 +41,28 @@ class ComponentType(str, Enum):
     VAT = "VAT"  # Value Added Tax
 
 
+class AmountEffect(str, Enum):
+    """Direction of amount impact on payable"""
+    INCREASES_PAYABLE = "INCREASES_PAYABLE"  # Positive obligation (we owe more)
+    DECREASES_PAYABLE = "DECREASES_PAYABLE"  # Negative obligation (we owe less)
+
+
+class AmountBasis(str, Enum):
+    """Basis for amount_due calculation"""
+    GROSS = "gross"  # Before commissions/deductions
+    NET = "net"      # After commissions/deductions
+
+
+class ObligationType(str, Enum):
+    """Types of financial obligations"""
+    SUPPLIER_BASELINE = "SUPPLIER_BASELINE"
+    SUPPLIER_COMMISSION_RETENTION = "SUPPLIER_COMMISSION_RETENTION"
+    AFFILIATE_COMMISSION = "AFFILIATE_COMMISSION"
+    TAX_VAT_ON_AFFILIATE_COMMISSION = "TAX_VAT_ON_AFFILIATE_COMMISSION"
+    AFFILIATE_PENALTY = "AFFILIATE_PENALTY"
+    SUPPLIER_CANCELLATION_FEE = "SUPPLIER_CANCELLATION_FEE"
+
+
 class PricingComponent(BaseModel):
     """Individual pricing component within an event"""
     component_type: Union[ComponentType, str]  # Accept both enum and string
@@ -219,10 +241,39 @@ class Affiliate(BaseModel):
     meta: Optional[Dict[str, Any]] = None  # For carry-over metadata
 
 
+class PayableLine(BaseModel):
+    """Individual payable line item within a party"""
+    obligation_type: Union[ObligationType, str]  # Accept both enum and string
+    amount: Union[int, float]
+    currency: str
+    amount_effect: Union[AmountEffect, str]  # Accept both enum and string
+    calculation: Optional[Dict[str, Any]] = None  # {"basis": "gross", "rate": 0.15}
+    description: Optional[str] = None
+
+
+class Party(BaseModel):
+    """Party involved in payables (supplier, affiliate, tax authority)"""
+    party_type: str  # "SUPPLIER", "AFFILIATE", "TAX_AUTHORITY"
+    party_id: str
+    party_name: str
+    lines: List[PayableLine]
+
+
 class Cancellation(BaseModel):
     """Cancellation details for supplier orders"""
     fee_amount: Optional[int] = None
     fee_currency: Optional[str] = None
+    replaces_original_cost: bool = False  # If true, cancellation fee becomes new baseline
+
+
+class SupplierCommission(BaseModel):
+    """Commission/incentive paid TO the supplier (not affiliate)"""
+    commission_type: str  # e.g., "PERFORMANCE_BONUS", "REFERRAL_FEE", "VOLUME_INCENTIVE"
+    amount: float  # Can be decimal
+    currency: str
+    rate: Optional[float] = None  # e.g., 0.04 for 4%
+    basis: Optional[str] = None  # e.g., "supplier_cost", "order_value"
+    description: Optional[str] = None
 
 
 class Supplier(BaseModel):
@@ -232,10 +283,12 @@ class Supplier(BaseModel):
     booking_code: Optional[str] = None
     supplier_ref: Optional[str] = None
     amount_due: Optional[int] = None
+    amount_basis: Optional[Union[AmountBasis, str]] = None  # NEW: "gross" or "net"
     currency: Optional[str] = None
     fx_context: Optional[FXContext] = None
     entity_context: Optional[EntityContext] = None
-    affiliate: Optional[Affiliate] = None  # For B2B affiliate cases
+    affiliate: Optional[Affiliate] = None  # DEPRECATED: Use parties array instead
+    supplier_commission: Optional[SupplierCommission] = None  # DEPRECATED: Use parties array instead
     cancellation: Optional[Cancellation] = None  # For cancelled orders
 
 
@@ -245,14 +298,20 @@ class SupplierLifecycleEvent(BaseModel):
     NOTE: This is the RAW producer event. It does NOT contain:
     - supplier_timeline_version (assigned by Order Core during normalization)
     This enrichment field only appears in SupplierTimelineUpserted events.
+
+    Schema v2 Changes:
+    - Added `parties` array for multi-party payables (supplier, affiliate, tax)
+    - Added `amount_basis` in Supplier model ("gross" or "net")
+    - Each party line includes `amount_effect` (INCREASES_PAYABLE/DECREASES_PAYABLE)
     """
     event_id: Optional[str] = None
-    event_type: str  # "IssuanceSupplierLifecycle"
-    schema_version: str = "supplier.timeline.v1"
+    event_type: str  # "SupplierLifecycleEvent"
+    schema_version: str = "supplier.timeline.v2"  # Version bump for multi-party support
     order_id: str
     order_detail_id: str
     emitted_at: str
-    supplier: Supplier  # Required nested supplier object with status, amounts
+    supplier: Supplier  # Required nested supplier object with status, amounts, amount_basis
+    parties: Optional[List[Party]] = None  # NEW: Multi-party payables (empty if obligations unchanged)
     idempotency_key: Optional[str] = None
     emitter_service: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None  # Additional metadata
@@ -298,3 +357,27 @@ class RefundIssuedEvent(BaseModel):
     emitter_service: str = "refund-service"
     meta: Optional[Dict[str, Any]] = None  # Additional metadata
     metadata: Optional[Dict[str, Any]] = None
+
+
+class PartnerAdjustmentEvent(BaseModel):
+    """
+    Standalone partner adjustment event (no supplier timeline version).
+    Used for operational adjustments like penalties, credits from Salesforce.
+    These obligations are ALWAYS included in effective payables regardless of supplier status.
+
+    Example use cases:
+    - Affiliate penalty for failed check-in (SF case-triggered)
+    - B2B corporate credit adjustment
+    - Tax withholding adjustment
+    """
+    event_id: Optional[str] = None
+    event_type: str = "PartnerAdjustmentEvent"
+    schema_version: str = "partner.adjustment.v1"
+    order_id: str
+    order_detail_id: str
+    emitted_at: str
+    party: Dict[str, str]  # {"party_type": "AFFILIATE", "party_id": "...", "party_name": "..."}
+    line: PayableLine  # Single line per event (emit multiple events for multiple lines)
+    idempotency_key: Optional[str] = None
+    emitter_service: Optional[str] = "salesforce-ops"
+    meta: Optional[Dict[str, Any]] = None

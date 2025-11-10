@@ -4,6 +4,7 @@
     "order_id": "1200496236",
     "vertical": "accommodation",
     "emitted_at": "2025-07-31T13:25:21Z",
+    "emitter_service": "accommodation-service",
     "customer_context": {
       "reseller_type_name": "B2B_AFFILIATE",
       "reseller_id": "100005361",

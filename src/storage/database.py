@@ -109,10 +109,13 @@ class Database:
                 booking_code TEXT,
                 supplier_reference_id TEXT,
                 amount INTEGER,
+                amount_basis TEXT,  -- NEW: "gross" or "net"
                 currency TEXT,
                 status TEXT,
                 cancellation_fee_amount INTEGER,
                 cancellation_fee_currency TEXT,
+                fx_context TEXT,  -- JSON: FX rates and currencies
+                entity_context TEXT,  -- JSON: Entity/legal context
                 emitter_service TEXT NOT NULL,
                 ingested_at TEXT NOT NULL,
                 emitted_at TEXT NOT NULL,
@@ -134,9 +137,11 @@ class Database:
                 order_detail_id TEXT NOT NULL,
                 supplier_timeline_version INTEGER NOT NULL,
                 obligation_type TEXT NOT NULL,
+                party_type TEXT,  -- "SUPPLIER", "AFFILIATE", "TAX_AUTHORITY"
                 party_id TEXT NOT NULL,
                 party_name TEXT,
                 amount INTEGER NOT NULL,
+                amount_effect TEXT NOT NULL DEFAULT 'INCREASES_PAYABLE',  -- "INCREASES_PAYABLE" or "DECREASES_PAYABLE"
                 currency TEXT NOT NULL,
                 calculation_basis TEXT,
                 calculation_rate REAL,
@@ -272,37 +277,43 @@ class Database:
         self.conn.commit()
 
     def insert_supplier_timeline(self, entry: dict):
-        """Insert supplier timeline entry"""
+        """Insert supplier timeline entry (supports both v1 and v2 schema)"""
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT INTO supplier_timeline VALUES (
                 :event_id, :order_id, :order_detail_id, :supplier_timeline_version,
                 :event_type, :supplier_id, :booking_code, :supplier_reference_id, :amount,
-                :currency, :status, :cancellation_fee_amount, :cancellation_fee_currency,
+                :amount_basis, :currency, :status, :cancellation_fee_amount, :cancellation_fee_currency,
+                :fx_context, :entity_context,
                 :emitter_service, :ingested_at, :emitted_at, :metadata
             )
         """, {
             **entry,
             'booking_code': entry.get('booking_code'),
+            'amount_basis': entry.get('amount_basis'),  # NEW: "gross" or "net"
             'status': entry.get('status'),
             'cancellation_fee_amount': entry.get('cancellation_fee_amount'),
             'cancellation_fee_currency': entry.get('cancellation_fee_currency'),
-            'metadata': json.dumps(entry.get('metadata'))
+            'fx_context': entry.get('fx_context'),  # NEW: JSON string
+            'entity_context': entry.get('entity_context'),  # NEW: JSON string
+            'metadata': json.dumps(entry.get('metadata')) if entry.get('metadata') else None
         })
         self.conn.commit()
 
     def insert_payable_line(self, entry: dict):
-        """Insert supplier payable line"""
+        """Insert supplier payable line (supports both v1 and v2 schema with amount_effect and party_type)"""
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT INTO supplier_payable_lines VALUES (
                 :line_id, :event_id, :order_id, :order_detail_id, :supplier_timeline_version,
-                :obligation_type, :party_id, :party_name, :amount, :currency,
+                :obligation_type, :party_type, :party_id, :party_name, :amount, :amount_effect, :currency,
                 :calculation_basis, :calculation_rate, :calculation_description,
                 :ingested_at, :metadata
             )
         """, {
             **entry,
+            'party_type': entry.get('party_type'),  # NEW: party_type field
+            'amount_effect': entry.get('amount_effect', 'INCREASES_PAYABLE'),  # Default to INCREASES_PAYABLE for v1
             'metadata': json.dumps(entry.get('metadata')) if entry.get('metadata') else None
         })
         self.conn.commit()
@@ -384,10 +395,18 @@ class Database:
         return {'original': original, 'refunds': refunds}
 
     def get_all_orders(self):
-        """Get list of all orders in the system"""
+        """Get list of all orders in the system from ANY event type"""
         cursor = self.conn.cursor()
         cursor.execute("""
-            SELECT DISTINCT order_id FROM pricing_components_fact
+            SELECT DISTINCT order_id FROM (
+                SELECT order_id FROM pricing_components_fact
+                UNION
+                SELECT order_id FROM payment_timeline
+                UNION
+                SELECT order_id FROM supplier_timeline
+                UNION
+                SELECT order_id FROM refund_timeline
+            )
             ORDER BY order_id
         """)
         return [row[0] for row in cursor.fetchall()]
@@ -469,7 +488,10 @@ class Database:
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     def get_supplier_payables_latest(self, order_id: str):
-        """Get latest supplier payable breakdown for an order"""
+        """
+        Get all supplier payable lines for an order (append-only, cumulative).
+        Returns ALL lines across timeline versions - use get_payables_by_party for aggregation.
+        """
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT
@@ -496,6 +518,279 @@ class Database:
             'line_id', 'event_id', 'order_id', 'order_detail_id', 'supplier_timeline_version',
             'obligation_type', 'party_id', 'party_name', 'amount', 'currency',
             'calculation_basis', 'calculation_rate', 'calculation_description', 'ingested_at'
+        ]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def get_payables_by_party(self, order_id: str):
+        """
+        Get total effective payables grouped by party_id and obligation_type.
+
+        **STATUS-DRIVEN MODEL**:
+        - Baseline supplier cost determined by latest supplier_timeline.status
+        - Adjustments (penalties/credits) are ALWAYS additive
+        - Commission/tax are conditionally included based on supplier status
+
+        Use get_total_effective_payables() for status-aware calculation.
+        This method returns RAW aggregation (all lines summed).
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                party_id,
+                party_name,
+                obligation_type,
+                SUM(amount) as total_amount,
+                currency,
+                COUNT(*) as line_count,
+                MIN(ingested_at) as first_recorded,
+                MAX(ingested_at) as last_updated
+            FROM supplier_payable_lines
+            WHERE order_id = ?
+            GROUP BY party_id, party_name, obligation_type, currency
+            ORDER BY party_id, obligation_type
+        """, (order_id,))
+
+        columns = [
+            'party_id', 'party_name', 'obligation_type', 'total_amount', 'currency',
+            'line_count', 'first_recorded', 'last_updated'
+        ]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def get_total_effective_payables(self, order_id: str):
+        """
+        Get effective payables using party-level projection with amount_effect.
+
+        NEW v2 Logic:
+        1. Get baseline from latest supplier_timeline.status per order_detail
+        2. Use party-level projection: latest obligation per (party_id, obligation_type)
+        3. Apply amount_effect: INCREASES_PAYABLE adds, DECREASES_PAYABLE subtracts
+        4. Conditionally include timeline-linked vs standalone based on status
+
+        Status rules:
+        - ISSUED/Confirmed: baseline = amount_due (with amount_basis display), include ALL obligations
+        - CancelledWithFee: baseline = cancellation_fee, EXCLUDE timeline obligations (version >= 1), keep standalone (version = -1)
+        - CancelledNoFee: baseline = 0, EXCLUDE timeline obligations, keep standalone
+        """
+        cursor = self.conn.cursor()
+
+        # Step 1: Get latest status per order_detail (with amount_basis)
+        cursor.execute("""
+            WITH latest_status AS (
+                SELECT
+                    order_id,
+                    order_detail_id,
+                    supplier_id,
+                    supplier_reference_id,
+                    status,
+                    amount,
+                    amount_basis,
+                    cancellation_fee_amount,
+                    currency,
+                    supplier_timeline_version,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY order_id, order_detail_id
+                        ORDER BY supplier_timeline_version DESC
+                    ) as rn
+                FROM supplier_timeline
+                WHERE order_id = ?
+            )
+            SELECT * FROM latest_status WHERE rn = 1
+        """, (order_id,))
+
+        latest_statuses = [dict(zip(
+            ['order_id', 'order_detail_id', 'supplier_id', 'supplier_reference_id',
+             'status', 'amount', 'amount_basis', 'cancellation_fee_amount', 'currency',
+             'supplier_timeline_version', 'rn'],
+            row
+        )) for row in cursor.fetchall()]
+
+        result = []
+
+        for status_row in latest_statuses:
+            order_detail_id = status_row['order_detail_id']
+            status = status_row['status']
+            amount_basis = status_row['amount_basis']
+
+            # Calculate baseline from status
+            if status in ('Confirmed', 'ISSUED', 'Invoiced', 'Settled'):
+                baseline_amount = status_row['amount'] or 0
+                baseline_reason = f"Supplier cost (status: {status}" + (f", basis: {amount_basis}" if amount_basis else "") + ")"
+                include_timeline_obligations = True
+            elif status == 'CancelledWithFee':
+                baseline_amount = status_row['cancellation_fee_amount'] or 0
+                baseline_reason = f"Cancellation fee (status: {status})"
+                include_timeline_obligations = False  # Exclude timeline obligations when cancelled
+            elif status in ('CancelledNoFee', 'Voided'):
+                baseline_amount = 0
+                baseline_reason = f"Cancelled without fee (status: {status})"
+                include_timeline_obligations = False
+            else:
+                baseline_amount = 0
+                baseline_reason = f"Unknown status: {status}"
+                include_timeline_obligations = False
+
+            # Step 2: Get party-level projection with amount_effect
+            # Key insight: We need to check if the latest supplier_timeline_version has ANY payable lines
+            # - If YES: use party-level projection from that version (Scenario D - adjusted affiliate)
+            # - If NO: exclude all timeline obligations (Scenario B - empty parties array)
+
+            latest_timeline_version = status_row['supplier_timeline_version']
+
+            # Check if the latest supplier_timeline_version has any payable lines
+            cursor.execute("""
+                SELECT COUNT(*) FROM supplier_payable_lines
+                WHERE order_id = ? AND order_detail_id = ?
+                  AND supplier_timeline_version = ?
+            """, (order_id, order_detail_id, latest_timeline_version))
+            has_lines_in_latest_version = cursor.fetchone()[0] > 0
+
+            if include_timeline_obligations:
+                # ISSUED/Confirmed: include ALL timeline obligations (party-level projection across all versions)
+                cursor.execute("""
+                    WITH latest_per_party AS (
+                        SELECT party_id, obligation_type, MAX(supplier_timeline_version) as latest_version
+                        FROM supplier_payable_lines
+                        WHERE order_id = ? AND order_detail_id = ?
+                          AND supplier_timeline_version >= 1
+                        GROUP BY party_id, obligation_type
+                    )
+                    SELECT p.obligation_type, p.party_type, p.party_id, p.party_name, p.amount, p.amount_effect, p.currency
+                    FROM supplier_payable_lines p
+                    JOIN latest_per_party l
+                      ON p.party_id = l.party_id
+                      AND p.obligation_type = l.obligation_type
+                      AND p.supplier_timeline_version = l.latest_version
+                    WHERE p.order_id = ? AND p.order_detail_id = ?
+                """, (order_id, order_detail_id, order_id, order_detail_id))
+                timeline_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
+                                       for row in cursor.fetchall()]
+            else:
+                # CancelledWithFee/CancelledNoFee: check if latest version has lines
+                if has_lines_in_latest_version:
+                    # Scenario D: Latest version has updated parties → include ONLY those (from latest version)
+                    cursor.execute("""
+                        SELECT obligation_type, party_type, party_id, party_name, amount, amount_effect, currency
+                        FROM supplier_payable_lines
+                        WHERE order_id = ? AND order_detail_id = ?
+                          AND supplier_timeline_version = ?
+                    """, (order_id, order_detail_id, latest_timeline_version))
+                    timeline_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
+                                           for row in cursor.fetchall()]
+                else:
+                    # Scenario B: Latest version has NO lines (empty parties array) → exclude all timeline obligations
+                    timeline_obligations = []
+
+            # Get standalone adjustments (version = -1) separately - ALWAYS included
+            cursor.execute("""
+                SELECT obligation_type, party_type, party_id, party_name, amount, amount_effect, currency
+                FROM supplier_payable_lines
+                WHERE order_id = ? AND order_detail_id = ?
+                  AND supplier_timeline_version = -1
+            """, (order_id, order_detail_id))
+
+            standalone_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
+                                     for row in cursor.fetchall()]
+
+            # Combine timeline + standalone
+            obligations = timeline_obligations + standalone_obligations
+
+            # Step 3: Group obligations by party and calculate party-level payables
+            from collections import defaultdict
+            party_groups = defaultdict(lambda: {'obligations': [], 'total_adjustment': 0})
+
+            # Get supplier party_id from status_row
+            supplier_party_id = status_row['supplier_id']
+
+            for obl in obligations:
+                party_id = obl['party_id']
+                party_groups[party_id]['obligations'].append(obl)
+                party_groups[party_id]['party_type'] = obl.get('party_type', 'UNKNOWN')
+                party_groups[party_id]['party_name'] = obl['party_name']
+
+                # Apply amount_effect logic per party
+                if obl['amount_effect'] == 'INCREASES_PAYABLE':
+                    party_groups[party_id]['total_adjustment'] += obl['amount']
+                elif obl['amount_effect'] == 'DECREASES_PAYABLE':
+                    party_groups[party_id]['total_adjustment'] -= obl['amount']
+
+            # Step 4: Build party-separated payables
+            parties_payables = []
+
+            # Always include supplier party (even if no obligations)
+            supplier_payable = {
+                'party_id': supplier_party_id,
+                'party_type': 'SUPPLIER',
+                'party_name': status_row['supplier_id'],  # Use supplier_id as name fallback
+                'baseline': baseline_amount,
+                'baseline_reason': baseline_reason,
+                'obligations': party_groups[supplier_party_id]['obligations'] if supplier_party_id in party_groups else [],
+                'total_adjustment': party_groups[supplier_party_id]['total_adjustment'] if supplier_party_id in party_groups else 0,
+                'total_payable': baseline_amount + (party_groups[supplier_party_id]['total_adjustment'] if supplier_party_id in party_groups else 0),
+                'currency': status_row['currency']
+            }
+            parties_payables.append(supplier_payable)
+
+            # Add non-supplier parties (affiliates, tax authorities, etc.)
+            for party_id, party_data in party_groups.items():
+                if party_id != supplier_party_id:
+                    party_payable = {
+                        'party_id': party_id,
+                        'party_type': party_data['party_type'],
+                        'party_name': party_data['party_name'],
+                        'baseline': 0,  # Non-supplier parties have no baseline
+                        'baseline_reason': 'No baseline (non-supplier party)',
+                        'obligations': party_data['obligations'],
+                        'total_adjustment': party_data['total_adjustment'],
+                        'total_payable': party_data['total_adjustment'],  # For non-suppliers, total = adjustment only
+                        'currency': status_row['currency']
+                    }
+                    parties_payables.append(party_payable)
+
+            # Step 5: Build result structure
+            result.append({
+                'order_detail_id': order_detail_id,
+                'supplier_baseline': {
+                    'supplier_id': status_row['supplier_id'],
+                    'amount': baseline_amount,
+                    'amount_basis': amount_basis,
+                    'reason': baseline_reason,
+                    'status': status,
+                    'currency': status_row['currency']
+                },
+                'parties': parties_payables,  # NEW: Party-separated payables
+                'party_obligations': obligations,  # DEPRECATED: Keep for backward compatibility
+                'total_payable': sum(p['total_payable'] for p in parties_payables)  # Sum across all parties
+            })
+
+        return result
+
+    def get_payables_timeline(self, order_id: str):
+        """
+        Get payables in chronological order showing evolution across timeline versions.
+
+        Useful for audit trail: see when each obligation was created (commission, penalty, etc.)
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                supplier_timeline_version,
+                obligation_type,
+                party_id,
+                party_name,
+                amount,
+                currency,
+                calculation_description,
+                ingested_at,
+                event_id,
+                line_id
+            FROM supplier_payable_lines
+            WHERE order_id = ?
+            ORDER BY supplier_timeline_version ASC, obligation_type
+        """, (order_id,))
+
+        columns = [
+            'supplier_timeline_version', 'obligation_type', 'party_id', 'party_name',
+            'amount', 'currency', 'calculation_description', 'ingested_at', 'event_id', 'line_id'
         ]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 

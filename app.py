@@ -82,6 +82,7 @@ page = st.sidebar.radio(
         "🎮 Producer Playground",
         "⚙️ Ingestion Console",
         "🔍 Order Explorer",
+        "🗄️ Raw Data Storage",
         "🧪 Stress Tests",
         "⚙️ Settings"
     ]
@@ -100,6 +101,7 @@ if page == "🏠 Home":
     - **🎮 Producer Playground**: Emit sample events from verticals, payment, and refund services
     - **⚙️ Ingestion Console**: Watch real-time validation, ID generation, and normalization
     - **🔍 Order Explorer**: Browse order pricing breakdowns, timelines, and component lineage
+    - **🗄️ Raw Data Storage**: View raw table contents after event ingestion (all columns visible)
     - **🧪 Stress Tests**: Test edge cases like out-of-order events, duplicates, and idempotency
 
     ### Architecture Overview
@@ -222,6 +224,10 @@ elif page == "⚙️ Ingestion Console":
 elif page == "🔍 Order Explorer":
     from src.ui.order_explorer import render_order_explorer
     render_order_explorer(st.session_state.db)
+
+elif page == "🗄️ Raw Data Storage":
+    from src.ui.raw_storage_viewer import render_raw_storage_viewer
+    render_raw_storage_viewer(st.session_state.db)
 
 elif page == "🧪 Stress Tests":
     from src.ui.stress_tests import render_stress_tests

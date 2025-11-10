@@ -837,17 +837,55 @@ def render_supplier_events(pipeline):
         scenario = st.selectbox(
             "Select Scenario",
             [
+                "🆕 Supplier Issued v2 (Multi-Party with Amount Effect)",
+                "🆕 Supplier Cancelled v2 (Projection-Based)",
+                "🆕 Supplier Cancelled v2 (Adjusted Affiliate)",
+                "🆕 Partner Adjustment (Standalone Penalty)",
                 "Supplier Issued (B2B Affiliate with Shareback)",
                 "Supplier Issued (Simple)",
                 "Custom JSON"
             ]
         )
 
-        if scenario == "Supplier Issued (B2B Affiliate with Shareback)":
+        if scenario == "🆕 Supplier Issued v2 (Multi-Party with Amount Effect)":
+            st.info("🆕 **Schema v2**: ISSUED with parties array containing supplier commission retention, affiliate commission, and VAT")
+            # Load from sample file
+            import os
+            sample_path = os.path.join(os.path.dirname(__file__), "../..", "sample_events/supplier_v2/1_issued_with_parties.json")
+            with open(sample_path, 'r') as f:
+                event = json.load(f)
+            # Update timestamp
+            event["emitted_at"] = datetime.utcnow().isoformat()
+
+        elif scenario == "🆕 Supplier Cancelled v2 (Projection-Based)":
+            st.info("🆕 **Schema v2**: CancelledWithFee with empty parties array (projection carries forward v1 obligations)")
+            import os
+            sample_path = os.path.join(os.path.dirname(__file__), "../..", "sample_events/supplier_v2/2_cancelled_with_fee_no_parties.json")
+            with open(sample_path, 'r') as f:
+                event = json.load(f)
+            event["emitted_at"] = datetime.utcnow().isoformat()
+
+        elif scenario == "🆕 Supplier Cancelled v2 (Adjusted Affiliate)":
+            st.info("🆕 **Schema v2**: CancelledWithFee with updated affiliate obligations in parties array")
+            import os
+            sample_path = os.path.join(os.path.dirname(__file__), "../..", "sample_events/supplier_v2/3_cancelled_with_adjusted_affiliate.json")
+            with open(sample_path, 'r') as f:
+                event = json.load(f)
+            event["emitted_at"] = datetime.utcnow().isoformat()
+
+        elif scenario == "🆕 Partner Adjustment (Standalone Penalty)":
+            st.info("🆕 **Standalone Adjustment**: Affiliate penalty (version = -1, persists regardless of supplier status)")
+            import os
+            sample_path = os.path.join(os.path.dirname(__file__), "../..", "sample_events/supplier_v2/4_affiliate_penalty.json")
+            with open(sample_path, 'r') as f:
+                event = json.load(f)
+            event["emitted_at"] = datetime.utcnow().isoformat()
+
+        elif scenario == "Supplier Issued (B2B Affiliate with Shareback)":
             st.info("🏢 **B2B Affiliate**: Supplier issuance with affiliate commission and VAT")
             event = {
                 "event_type": "IssuanceSupplierLifecycle",
-                "schema_version": "supplier.commerce.v1",
+                "schema_version": "supplier.timeline.v1",
                 "order_id": "1200496236",
                 "order_detail_id": "1200917821",
                 "emitted_at": datetime.utcnow().isoformat(),
@@ -900,7 +938,7 @@ def render_supplier_events(pipeline):
         elif scenario == "Supplier Issued (Simple)":
             event = {
                 "event_type": "IssuanceSupplierLifecycle",
-                "schema_version": "supplier.commerce.v1",
+                "schema_version": "supplier.timeline.v1",
                 "order_id": "ORD-9001",
                 "order_detail_id": "OD-001",
                 "emitted_at": datetime.utcnow().isoformat(),
@@ -962,7 +1000,7 @@ def render_supplier_events(pipeline):
             # Default template (new schema with supplier object and fx_context)
             template_event = {
                 "event_type": "IssuanceSupplierLifecycle",
-                "schema_version": "supplier.commerce.v1",
+                "schema_version": "supplier.timeline.v1",
                 "order_id": "ORD-9001",
                 "order_detail_id": "OD-001",
                 "emitted_at": datetime.utcnow().isoformat(),

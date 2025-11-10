@@ -445,114 +445,131 @@ def render_supplier_timeline(db, order_id):
 
 
 def render_supplier_payables(db, order_id):
-    """Show supplier payable breakdown for order using status-driven obligation model"""
+    """Show supplier payable breakdown for order using party-level projection with amount_effect"""
 
-    st.markdown("### Supplier Payable Breakdown")
-    st.caption("Status-driven obligation model: Collapses to latest status per supplier instance (supplier_id + supplier_ref)")
+    st.markdown("### Supplier Payable Breakdown (v2 with Amount Effect)")
+    st.caption("🆕 Party-level projection: Latest obligation per (party_id, obligation_type) with amount_effect directionality")
 
-    # Get supplier payables with status-driven logic
-    payables_data = db.get_supplier_payables_with_status(order_id)
+    # Get total effective payables (v2 with party-level projection)
+    payables_data = db.get_total_effective_payables(order_id)
 
     if not payables_data:
         st.info("No supplier payables recorded for this order")
         return
 
-    # Display each supplier instance
-    total_supplier = 0
-    total_affiliate = 0
-    total_tax = 0
+    # Display each order_detail
+    grand_total_payable = 0
     currency = 'IDR'
 
-    for supplier_instance_data in payables_data:
-        supplier_info = supplier_instance_data['supplier_instance']
-        breakdown = supplier_instance_data['breakdown_lines']
-
-        # Extract totals
-        supplier_lines = [b for b in breakdown if b['obligation_type'] == 'SUPPLIER']
-        affiliate_lines = [b for b in breakdown if b['obligation_type'] == 'AFFILIATE_COMMISSION']
-        tax_lines = [b for b in breakdown if b['obligation_type'] == 'TAX_WITHHOLDING']
+    for detail_data in payables_data:
+        order_detail_id = detail_data['order_detail_id']
+        supplier_baseline = detail_data['supplier_baseline']
+        parties = detail_data.get('parties', [])  # NEW: Party-separated payables
+        total_payable = detail_data['total_payable']
 
         # Status badge
         status_colors = {
             'Confirmed': '🟢', 'ISSUED': '🟢', 'Invoiced': '🟢', 'Settled': '🟢',
             'CancelledWithFee': '🟡', 'CancelledNoFee': '⚪', 'Voided': '⚪'
         }
-        badge = status_colors.get(supplier_info['status'], '🔵')
+        status = supplier_baseline['status']
+        badge = status_colors.get(status, '🔵')
 
-        # Supplier header
-        st.markdown(f"#### {supplier_info['supplier_id']} {badge} `{supplier_info['status']}`")
-        st.caption(f"Ref: {supplier_info['supplier_reference_id']} | Detail: {supplier_info['order_detail_id']} | Version: {supplier_info['supplier_timeline_version']}")
+        # Header
+        st.markdown(f"### Order Detail: {order_detail_id}")
+        st.caption(f"Status: {badge} **{status}** | Supplier: **{supplier_baseline['supplier_id']}**")
 
-        # Show effective payable vs original breakdown
-        currency = supplier_info['currency'] or 'IDR'
-        effective = supplier_info['effective_payable']
+        currency = supplier_baseline['currency'] or 'IDR'
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Effective Payable", format_currency(effective, currency))
-        with col2:
-            if affiliate_lines:
-                affiliate_amt = sum(b['amount'] for b in affiliate_lines)
-                st.metric("Affiliate Commission", format_currency(affiliate_amt, currency))
-                total_affiliate += affiliate_amt
-        with col3:
-            if tax_lines:
-                tax_amt = sum(b['amount'] for b in tax_lines)
-                st.metric("Tax Withholding", format_currency(tax_amt, currency))
-                total_tax += tax_amt
+        # Display party-separated payables
+        if parties:
+            for party in parties:
+                party_type = party.get('party_type', 'UNKNOWN')
+                party_type_badge = {
+                    'SUPPLIER': '🏪',
+                    'AFFILIATE': '🤝',
+                    'TAX_AUTHORITY': '🏛️'
+                }.get(party_type, '❓')
 
-        # Breakdown details in expander
-        with st.expander("📋 View Detailed Breakdown"):
-            if supplier_lines:
-                st.markdown("**Supplier Cost:**")
-                for line in supplier_lines:
-                    st.write(f"• {line['party_name']}: {format_currency(line['amount'], line['currency'])}")
+                # Party header
+                st.markdown(f"#### {party_type_badge} {party['party_name']} `{party_type}`")
+                st.caption(f"Party ID: {party['party_id']}")
 
-            if affiliate_lines:
-                st.markdown("**Affiliate Commission:**")
-                for line in affiliate_lines:
-                    st.write(f"• {line['party_name']} (Partner ID: {line['party_id']})")
-                    st.write(f"  Amount: {format_currency(line['amount'], line['currency'])}")
-                    if line['calculation_description']:
-                        st.caption(f"  💡 {line['calculation_description']}")
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    baseline_amt = party['baseline']
+                    if party_type == 'SUPPLIER':
+                        amount_basis = supplier_baseline.get('amount_basis')
+                        basis_label = f" ({amount_basis})" if amount_basis else ""
+                        st.metric(f"Baseline{basis_label}", format_currency(baseline_amt, currency))
+                    else:
+                        st.metric("Baseline", format_currency(baseline_amt, currency))
+                with col2:
+                    adjustment = party['total_adjustment']
+                    st.metric("Adjustments (Net)", format_currency(adjustment, currency), delta=adjustment)
+                with col3:
+                    party_total = party['total_payable']
+                    st.metric("Total Payable", format_currency(party_total, currency))
 
-            if tax_lines:
-                st.markdown("**Tax Withholding:**")
-                for line in tax_lines:
-                    st.write(f"• {line['party_name']}: {format_currency(line['amount'], line['currency'])}")
-                    if line['calculation_description']:
-                        st.caption(f"  💡 {line['calculation_description']}")
+                # Show reason for baseline
+                if party['baseline'] != 0:
+                    st.caption(f"💡 {party['baseline_reason']}")
 
-        total_supplier += effective
+                # Party obligations breakdown
+                if party['obligations']:
+                    with st.expander("📋 View Obligation Details"):
+                        for obl in party['obligations']:
+                            # Color code by amount_effect
+                            if obl['amount_effect'] == 'INCREASES_PAYABLE':
+                                effect_color = "🔺"  # Red triangle
+                                effect_text = "INCREASES"
+                            else:
+                                effect_color = "🔻"  # Green triangle
+                                effect_text = "DECREASES"
+
+                            st.markdown(f"**{effect_color} {obl['obligation_type']}** ({effect_text} PAYABLE)")
+                            st.write(f"• Amount: {format_currency(obl['amount'], obl['currency'])}")
+                            if obl.get('calculation_description'):
+                                st.caption(f"  💡 {obl['calculation_description']}")
+                            st.markdown("---")
+                else:
+                    st.caption("ℹ️ No obligations for this party")
+
+                st.markdown("---")
+        else:
+            st.caption("ℹ️ No party payables (legacy format)")
+
+        grand_total_payable += total_payable
         st.markdown("---")
 
     # Grand total
-    grand_total = total_supplier + total_affiliate + total_tax
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Total Breakdown:**")
-        st.write(f"• Supplier Costs (Effective): {format_currency(total_supplier, currency)}")
-        st.write(f"• Affiliate Commissions: {format_currency(total_affiliate, currency)}")
-        st.write(f"• Tax Withholdings: {format_currency(total_tax, currency)}")
-    with col2:
-        st.markdown(f"### Grand Total: **{format_currency(grand_total, currency)}**")
+    st.markdown(f"### Grand Total Payable: **{format_currency(grand_total_payable, currency)}**")
 
     # Status legend
-    with st.expander("📖 Status Legend & Business Rules"):
+    with st.expander("📖 v2 Model: Party-Level Projection with Amount Effect"):
         st.markdown("""
-        **Status-Driven Obligation Model:**
+        **Status-Driven Baseline + Party-Level Projection:**
 
-        | Status | Badge | Effective Payable |
-        |--------|-------|-------------------|
-        | Confirmed, ISSUED, Invoiced, Settled | 🟢 | Full `amount_due` |
-        | CancelledWithFee | 🟡 | Only `cancellation_fee_amount` |
-        | CancelledNoFee, Voided | ⚪ | Zero (struck through) |
+        | Status | Badge | Baseline | Party Obligations Included |
+        |--------|-------|----------|---------------------------|
+        | Confirmed, ISSUED, Invoiced, Settled | 🟢 | `amount_due` (with amount_basis) | ALL (timeline + standalone) |
+        | CancelledWithFee | 🟡 | `cancellation_fee_amount` | ONLY standalone (version = -1) |
+        | CancelledNoFee, Voided | ⚪ | 0 | ONLY standalone (version = -1) |
 
-        **How it works:**
-        1. System gets latest event per supplier instance (supplier_id + supplier_ref)
-        2. Maps status → effective obligation using CASE statement
-        3. Supports rebooking: NATIVE cancelled → EXPEDIA confirmed shows both
+        **Amount Effect Directionality:**
+        - 🔺 **INCREASES_PAYABLE**: We owe more (e.g., affiliate commission, tax, penalty)
+        - 🔻 **DECREASES_PAYABLE**: We owe less (e.g., supplier commission retention)
+
+        **Party-Level Projection Logic:**
+        1. Get latest supplier status per order_detail
+        2. Query latest obligation per (party_id, obligation_type) across timeline versions
+        3. Apply amount_effect: INCREASES += amount, DECREASES -= amount
+        4. If cancelled: exclude timeline-linked obligations (version >= 1), keep standalone (version = -1)
+
+        **Projection Carry-Forward:**
+        - Empty parties array → obligations from v1 carried forward via projection
+        - Updated parties array → latest wins (replaces previous obligations)
         """)
 
 

@@ -1,0 +1,49 @@
+{
+    "supplier": {
+      "status": "ISSUED",
+      "supplier_id": "NATIVE",
+      "supplier_ref": "1859696",
+      "amount_due": 300000,
+      "currency": "IDR",
+      "amount_basis": "gross"
+    },
+    "parties": [
+      {
+        "party_type": "SUPPLIER",
+        "party_id": "NATIVE",
+        "party_name": "Supplier Native",
+        "lines": [
+          {
+            "obligation_type": "SUPPLIER_COMMISSION_RETENTION",
+            "amount": 45000,
+            "currency": "IDR",
+            "amount_effect": "DECREASES_PAYABLE",
+            "calculation": { "basis": "gross", "rate": 0.15 }
+          }
+        ]
+      },
+      {
+        "party_type": "AFFILIATE",
+        "party_id": "100005361",
+        "party_name": "Partner CFD Non IDR - Accommodation - Invoicing",
+        
+        "lines": [
+          {
+            "obligation_type": "AFFILIATE_COMMISSION",
+            "amount": 4694,
+            "currency": "IDR",
+            "amount_effect": "INCREASES_PAYABLE",
+            "calculation": { "basis": "markup", "rate": 0.10 }
+          },
+          {
+            "obligation_type": "TAX_VAT_ON_AFFILIATE_COMMISSION",
+            "amount": 516,
+            "currency": "IDR",
+            "amount_effect": "INCREASES_PAYABLE",
+            "calculation": { "basis": "shareback", "rate": 0.11 }
+          }
+        ]
+      }
+    ]
+  }
+  

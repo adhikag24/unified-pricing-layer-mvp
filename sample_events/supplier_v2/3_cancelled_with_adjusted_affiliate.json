@@ -1,0 +1,75 @@
+{
+  "event_id": "evt_cancelled_adjusted_003",
+  "event_type": "SupplierLifecycleEvent",
+  "schema_version": "supplier.timeline.v2",
+  "order_id": "ORD-9002",
+  "order_detail_id": "OD-002",
+  "emitted_at": "2025-01-12T16:00:00Z",
+  "emitter_service": "ttd-service",
+  "idempotency_key": "ttd_order_OD-002_cancelled_v2",
+  "supplier": {
+    "status": "CancelledWithFee",
+    "supplier_id": "AGODA",
+    "booking_code": "AGODA-98765",
+    "supplier_ref": "REF-AGODA-002",
+    "amount_due": null,
+    "amount_basis": null,
+    "currency": "IDR",
+    "cancellation": {
+      "fee_amount": 75000,
+      "fee_currency": "IDR",
+      "replaces_original_cost": true
+    },
+    "fx_context": {
+      "timestamp_fx_rate": "2025-01-12T16:00:00Z",
+      "payment_currency": "IDR",
+      "supply_currency": "IDR",
+      "record_currency": "IDR",
+      "gbv_currency": "USD",
+      "payment_value": 75000,
+      "supply_to_payment_fx_rate": 1.0,
+      "supply_to_record_fx_rate": 1.0,
+      "payment_to_gbv_fx_rate": 0.000065,
+      "source": "Treasury"
+    },
+    "entity_context": {
+      "entity_code": "TNPL"
+    }
+  },
+  "parties": [
+    {
+      "party_type": "AFFILIATE",
+      "party_id": "100005361",
+      "party_name": "Partner CFD Non IDR - Accommodation - Invoicing",
+      "lines": [
+        {
+          "obligation_type": "AFFILIATE_COMMISSION",
+          "amount": 2000,
+          "amount_effect": "INCREASES_PAYABLE",
+          "currency": "IDR",
+          "calculation": {
+            "basis": "cancellation_fee",
+            "rate": 0.1
+          },
+          "description": "Adjusted 10% affiliate commission on cancellation fee (was 4694 on original booking)"
+        },
+        {
+          "obligation_type": "TAX_VAT_ON_AFFILIATE_COMMISSION",
+          "amount": 220,
+          "amount_effect": "INCREASES_PAYABLE",
+          "currency": "IDR",
+          "calculation": {
+            "basis": "affiliate_commission",
+            "rate": 0.11
+          },
+          "description": "11% VAT on adjusted affiliate commission"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "cancellation_reason": "Supplier cancellation policy changed",
+    "cancelled_at": "2025-01-12T16:00:00Z",
+    "adjustment_note": "Affiliate commission recalculated based on cancellation fee instead of original booking amount"
+  }
+}

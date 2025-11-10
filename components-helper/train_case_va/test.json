@@ -32,37 +32,12 @@
     "components": [
       {
         "component_type": "BaseFare",
-        "amount": 795000,
+        "amount": 195000,
         "currency": "IDR",
         "dimensions": {
           "order_detail_id": "1365755656",
           "profile_id": "216709946"
         }
-      },
-      {
-        "component_type": "BaseFare",
-        "amount": 795000,
-        "currency": "IDR",
-        "dimensions": {
-          "order_detail_id": "1365755656",
-          "profile_id": "255146342"
-        }
-      },
-      {
-        "component_type": "PlatformFee",
-        "amount": 17000,
-        "currency": "IDR",
-        "dimensions": {}
-      },
-      {
-        "component_type": "ConvenienceFee",
-        "amount": 7500,
-        "currency": "IDR",
-        "dimensions": {}
       }
-    ],
-    "totals": {
-      "customer_total": 1614500,
-      "currency": "IDR"
-    }
+    ]
   }

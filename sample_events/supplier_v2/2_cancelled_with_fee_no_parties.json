@@ -1,0 +1,44 @@
+{
+  "event_id": "evt_cancelled_002",
+  "event_type": "SupplierLifecycleEvent",
+  "schema_version": "supplier.timeline.v2",
+  "order_id": "ORD-9001",
+  "order_detail_id": "OD-001",
+  "emitted_at": "2025-01-11T14:00:00Z",
+  "emitter_service": "ttd-service",
+  "idempotency_key": "ttd_order_OD-001_cancelled_v2",
+  "supplier": {
+    "status": "CancelledWithFee",
+    "supplier_id": "NATIVE",
+    "booking_code": "NATIVE-12345",
+    "supplier_ref": "REF-NATIVE-001",
+    "amount_due": null,
+    "amount_basis": null,
+    "currency": "IDR",
+    "cancellation": {
+      "fee_amount": 50000,
+      "fee_currency": "IDR",
+      "replaces_original_cost": true
+    },
+    "fx_context": {
+      "timestamp_fx_rate": "2025-01-11T14:00:00Z",
+      "payment_currency": "IDR",
+      "supply_currency": "IDR",
+      "record_currency": "IDR",
+      "gbv_currency": "USD",
+      "payment_value": 50000,
+      "supply_to_payment_fx_rate": 1.0,
+      "supply_to_record_fx_rate": 1.0,
+      "payment_to_gbv_fx_rate": 0.000065,
+      "source": "Treasury"
+    },
+    "entity_context": {
+      "entity_code": "TNPL"
+    }
+  },
+  "parties": [],
+  "meta": {
+    "cancellation_reason": "Customer requested cancellation",
+    "cancelled_at": "2025-01-11T14:00:00Z"
+  }
+}

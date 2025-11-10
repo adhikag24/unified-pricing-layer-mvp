@@ -1,0 +1,22 @@
+/*unlike supplier lifecycle event, this event is normalized without having supplier timeline version incremented but always null. So while effective payable is derived from supplier_id and supplier_ref with highest version, this lines should be presented without window function that retrieve latest version but simly sum total amount per obligation type, party_id, party_name, and currency. */
+{
+    "event_type": "PartnerAdjustmentEvent",
+    "order_id": "ORD-1",
+    "order_detail_id": "OD-1",
+    "emitted_at": "2025-08-03T09:15:00Z",
+    "party": {
+      "party_type": "AFFILIATE",
+      "party_id": "100005361",
+      "party_name": "Partner CFD Non IDR - Accommodation - Invoicing"
+    },
+    "line": {
+      "obligation_type": "AFFILIATE_PENALTY",
+      "amount": 500000,
+      "currency": "IDR",
+      "amount_effect": "INCREASES_PAYABLE", 
+      "reason": "Failed check-in compensation per SLA"
+    },
+    "metadata": {
+      "sf_case_id": "CS-12345"
+    }
+  }
