@@ -777,12 +777,24 @@ class IngestionPipeline:
 
             ingested_at = datetime.utcnow().isoformat()
 
+            # Assign refund_timeline_version (Order Core responsibility)
+            # Get latest version for this refund_id and increment
+            cursor = self.db.conn.cursor()
+            cursor.execute("""
+                SELECT MAX(refund_timeline_version)
+                FROM refund_timeline
+                WHERE order_id = ? AND refund_id = ?
+            """, (event.order_id, event.refund_id))
+            max_version = cursor.fetchone()[0]
+            refund_timeline_version = (max_version or 0) + 1
+
             normalized = NormalizedRefundTimeline(
                 event_id=event_id,
                 order_id=event.order_id,
                 refund_id=event.refund_id,
-                refund_timeline_version=event.refund_timeline_version,
+                refund_timeline_version=refund_timeline_version,
                 event_type=event.event_type.value,
+                status=event.status,  # NEW: Read status from producer event
                 refund_amount=event.refund_amount,
                 currency=event.currency,
                 refund_reason=event.refund_reason,
@@ -796,11 +808,12 @@ class IngestionPipeline:
 
             return IngestionResult(
                 success=True,
-                message=f"Ingested refund event: {event.event_type.value}",
+                message=f"Ingested refund event: {event.event_type.value} (version {refund_timeline_version})",
                 details={
                     'event_id': event_id,
                     'order_id': event.order_id,
-                    'refund_id': event.refund_id
+                    'refund_id': event.refund_id,
+                    'refund_timeline_version': refund_timeline_version
                 }
             )
 

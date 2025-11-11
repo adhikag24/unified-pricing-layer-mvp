@@ -1,0 +1,12 @@
+{
+  "event_type": "refund.processing",
+  "schema_version": "refund.timeline.v1",
+  "order_id": "ORD-NEW",
+  "refund_id": "RFD-001",
+  "status": "PROCESSING",
+  "refund_amount": 500000,
+  "currency": "IDR",
+  "refund_reason": "Customer requested cancellation",
+  "emitted_at": "2025-11-10T12:05:00Z",
+  "emitter_service": "refund-service"
+}

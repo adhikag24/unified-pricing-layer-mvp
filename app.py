@@ -83,6 +83,7 @@ page = st.sidebar.radio(
         "⚙️ Ingestion Console",
         "🔍 Order Explorer",
         "🗄️ Raw Data Storage",
+        "📊 Latest State Projection",
         "🧪 Stress Tests",
         "⚙️ Settings"
     ]
@@ -102,6 +103,7 @@ if page == "🏠 Home":
     - **⚙️ Ingestion Console**: Watch real-time validation, ID generation, and normalization
     - **🔍 Order Explorer**: Browse order pricing breakdowns, timelines, and component lineage
     - **🗄️ Raw Data Storage**: View raw table contents after event ingestion (all columns visible)
+    - **📊 Latest State Projection**: Get complete order overview with latest pricing, payment state, supplier timeline, refunds, and payables in one view
     - **🧪 Stress Tests**: Test edge cases like out-of-order events, duplicates, and idempotency
 
     ### Architecture Overview
@@ -228,6 +230,10 @@ elif page == "🔍 Order Explorer":
 elif page == "🗄️ Raw Data Storage":
     from src.ui.raw_storage_viewer import render_raw_storage_viewer
     render_raw_storage_viewer(st.session_state.db)
+
+elif page == "📊 Latest State Projection":
+    from src.ui.unified_order_view import render_unified_order_view
+    render_unified_order_view(st.session_state.db)
 
 elif page == "🧪 Stress Tests":
     from src.ui.stress_tests import render_stress_tests

@@ -164,6 +164,7 @@ class Database:
                 refund_id TEXT NOT NULL,
                 refund_timeline_version INTEGER NOT NULL,
                 event_type TEXT NOT NULL,
+                status TEXT NOT NULL,  -- INITIATED, PROCESSING, ISSUED, CLOSED, FAILED
                 refund_amount INTEGER NOT NULL,
                 currency TEXT NOT NULL,
                 refund_reason TEXT,
@@ -324,7 +325,7 @@ class Database:
         cursor.execute("""
             INSERT INTO refund_timeline VALUES (
                 :event_id, :order_id, :refund_id, :refund_timeline_version,
-                :event_type, :refund_amount, :currency, :refund_reason,
+                :event_type, :status, :refund_amount, :currency, :refund_reason,
                 :emitter_service, :ingested_at, :emitted_at, :metadata
             )
         """, {
@@ -484,6 +485,21 @@ class Database:
             WHERE order_id = ? AND order_detail_id = ?
             ORDER BY supplier_timeline_version ASC
         """, (order_id, order_detail_id))
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def get_refund_timeline(self, order_id: str):
+        """Get refund timeline for an order (all refunds, all versions, ordered by refund_id and version)"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                event_id, order_id, refund_id, refund_timeline_version,
+                event_type, status, refund_amount, currency, refund_reason,
+                emitter_service, ingested_at, emitted_at, metadata
+            FROM refund_timeline
+            WHERE order_id = ?
+            ORDER BY refund_id ASC, refund_timeline_version ASC
+        """, (order_id,))
         columns = [desc[0] for desc in cursor.description]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 

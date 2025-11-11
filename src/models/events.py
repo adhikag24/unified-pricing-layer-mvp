@@ -324,13 +324,17 @@ class SupplierLifecycleEvent(BaseModel):
 
 
 class RefundLifecycleEvent(BaseModel):
-    """Refund timeline events (initiated, closed)"""
+    """
+    Producer event for refund timeline (initiated, processing, issued, closed, failed).
+    NOTE: This is the RAW producer event. It does NOT contain:
+    - refund_timeline_version (assigned by Order Core during normalization)
+    """
     event_id: Optional[str] = None  # Optional - Order Core can generate if missing
     event_type: EventType
     schema_version: str = "refund.timeline.v1"
     order_id: str
     refund_id: str
-    refund_timeline_version: int  # Monotonic per refund_id
+    status: str  # INITIATED, PROCESSING, ISSUED, CLOSED, FAILED
     refund_amount: int
     currency: str
     refund_reason: Optional[str] = None

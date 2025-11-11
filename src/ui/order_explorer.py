@@ -28,12 +28,13 @@ def render_order_explorer(db):
         return
 
     # Tabs for different views
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "💰 Latest Breakdown",
         "📜 Version History",
         "🔗 Component Lineage",
         "💳 Payment Timeline",
         "🏪 Supplier Timeline",
+        "↩️ Refund Timeline",
         "💼 Supplier Payables"
     ])
 
@@ -57,6 +58,9 @@ def render_order_explorer(db):
         render_supplier_timeline(db, selected_order)
 
     with tab6:
+        render_refund_timeline_tab(db, selected_order)
+
+    with tab7:
         render_supplier_payables(db, selected_order)
 
 
@@ -297,8 +301,37 @@ def render_component_lineage(db, order_id):
             st.dataframe(df_refunds, use_container_width=True)
 
             # Calculate net amount
-            original_amount = sum(row['amount'] for row in lineage['original'])
-            refund_amount = sum(row['amount'] for row in lineage['refunds'])
+            # FIX: Use only LATEST version of original component (not sum of all versions)
+            latest_original = max(lineage['original'], key=lambda x: x['version']) if lineage['original'] else None
+            original_amount = latest_original['amount'] if latest_original else 0
+
+            # FIX: Group refunds by refund_id and take only latest version of each refund
+            # Refund semantic IDs have format: cs-{order_id}-{refund_id}-{dimensions}-{component_type}
+            # We need to extract refund_id and group by it
+            refund_by_id = {}
+            for row in lineage['refunds']:
+                # Extract refund_id from semantic ID
+                # Format: cs-ORD-XXX-RFD-XXX-... (refund_id is between second and third dash after order_id)
+                semantic_id = row['component_semantic_id']
+                parts = semantic_id.split('-')
+                # Find RFD- pattern which indicates refund_id
+                refund_id = None
+                for i in range(len(parts) - 1):
+                    if parts[i] == 'RFD':
+                        refund_id = f"{parts[i]}-{parts[i+1]}"
+                        break
+
+                if refund_id:
+                    if refund_id not in refund_by_id:
+                        refund_by_id[refund_id] = []
+                    refund_by_id[refund_id].append(row)
+
+            # For each refund_id group, take only the latest version
+            refund_amount = 0
+            for refund_id, refund_versions in refund_by_id.items():
+                latest_refund = max(refund_versions, key=lambda x: x['version'])
+                refund_amount += latest_refund['amount']
+
             net_amount = original_amount + refund_amount
 
             currency = lineage['original'][0]['currency'] if lineage['original'] else 'IDR'
@@ -571,6 +604,80 @@ def render_supplier_payables(db, order_id):
         - Empty parties array → obligations from v1 carried forward via projection
         - Updated parties array → latest wins (replaces previous obligations)
         """)
+
+
+def render_refund_timeline_tab(db, order_id):
+    """Show refund timeline evolution"""
+
+    st.markdown("### ↩️ Refund Timeline")
+    st.caption("Track refund lifecycle events: initiated, issued, closed")
+
+    refunds = db.get_refund_timeline(order_id)
+
+    if not refunds:
+        st.info("No refund events found for this order")
+        return
+
+    # Group by refund_id
+    refund_groups = {}
+    for row in refunds:
+        refund_id = row['refund_id']
+        if refund_id not in refund_groups:
+            refund_groups[refund_id] = []
+        refund_groups[refund_id].append(row)
+
+    # Show each refund as a separate section
+    for refund_id, events in refund_groups.items():
+        with st.expander(f"**{refund_id}** ({len(events)} events)", expanded=True):
+            # Show latest status prominently
+            latest = events[-1]
+
+            # Status emoji based on status field
+            status_emoji = {
+                'INITIATED': '🔄',
+                'PROCESSING': '⏳',
+                'ISSUED': '✅',
+                'CLOSED': '🔒',
+                'FAILED': '❌'
+            }.get(latest['status'], '↩️')
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Status", f"{status_emoji} {latest['status']}")
+            with col2:
+                st.metric("Version", latest['refund_timeline_version'])
+            with col3:
+                st.metric("Event Type", latest['event_type'])
+            with col4:
+                st.metric("Refund Amount", format_currency(latest['refund_amount'], latest['currency']))
+
+            if latest['refund_reason']:
+                st.info(f"💡 **Reason**: {latest['refund_reason']}")
+
+            # Timeline events table
+            st.markdown("**Event Timeline:**")
+            refund_list = []
+            for row in events:
+                status_emoji_row = {
+                    'INITIATED': '🔄',
+                    'PROCESSING': '⏳',
+                    'ISSUED': '✅',
+                    'CLOSED': '🔒',
+                    'FAILED': '❌'
+                }.get(row['status'], '↩️')
+
+                refund_list.append({
+                    'Version': row['refund_timeline_version'],
+                    'Status': f"{status_emoji_row} {row['status']}",
+                    'Event Type': row['event_type'],
+                    'Amount': format_currency(row['refund_amount'], row['currency']),
+                    'Reason': row['refund_reason'] or '-',
+                    'Emitter': row['emitter_service'],
+                    'Emitted At': format_datetime(row['emitted_at'])
+                })
+
+            df = pd.DataFrame(refund_list)
+            st.dataframe(df, use_container_width=True)
 
 
 # Utility functions

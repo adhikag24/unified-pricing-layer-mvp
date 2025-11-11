@@ -60,9 +60,5 @@
         "currency": "IDR",
         "dimensions": {}
       }
-    ],
-    "totals": {
-      "customer_total": 1614500,
-      "currency": "IDR"
-    }
+    ]
   }

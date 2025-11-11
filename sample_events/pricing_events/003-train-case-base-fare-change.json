@@ -32,7 +32,7 @@
     "components": [
       {
         "component_type": "BaseFare",
-        "amount": 195000,
+        "amount": 800000,
         "currency": "IDR",
         "dimensions": {
           "order_detail_id": "1365755656",

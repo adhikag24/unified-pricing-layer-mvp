@@ -679,6 +679,41 @@
                                 <li>Queryable via semantic ID for lineage</li>
                             </ul>
                         </div>
+
+                        <div class="criteria-section">
+                            <strong>Semantic ID Generation (Refund-Specific):</strong>
+                            <ul>
+                                <li>Refund semantic ID format: <code>cs-{order_id}-{refund_id}-{dimensions}-{component_type}</code></li>
+                                <li><strong>Key Difference</strong>: <code>refund_id</code> is embedded in semantic ID (unlike non-refund components)</li>
+                                <li>Example: <code>cs-ORD-001-RFD-001-OD-001-BaseFare</code></li>
+                                <li>Rationale: A single refund can be updated/corrected, creating multiple versions</li>
+                            </ul>
+                        </div>
+
+                        <div class="criteria-section">
+                            <strong>"Latest" Projection Behavior (Differs from Non-Refund Components):</strong>
+                            <ul>
+                                <li><strong>Non-Refund Components</strong>: Latest determined by <code>(order_id, component_semantic_id)</code>
+                                    <ul>
+                                        <li>Takes MAX(version) per semantic ID</li>
+                                        <li>One "latest" row per unique component type/dimensions</li>
+                                    </ul>
+                                </li>
+                                <li><strong>Refund Components</strong>: Latest determined by <code>(component_semantic_id, refund_id)</code>
+                                    <ul>
+                                        <li>Refund ID extracted from semantic ID</li>
+                                        <li>Takes latest version per refund_id</li>
+                                        <li>One "latest" row per unique (refund_id, component_type, dimensions)</li>
+                                    </ul>
+                                </li>
+                                <li><strong>Why This Matters</strong>: Prevents double-counting when a refund is corrected/updated
+                                    <ul>
+                                        <li>Example: RFD-001 initially refunds -200000 (v2), then corrected to -250000 (v3)</li>
+                                        <li>Net calculation should use -250000 only (latest for RFD-001), not both versions</li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
                     </td>
                     <td class="implementation-notes">
                         <div class="impl-note">
@@ -707,6 +742,7 @@
                                 <li>Query refund components by refund_of_component_semantic_id</li>
                                 <li>Aggregate net amount per semantic ID (original + refunds)</li>
                                 <li>Component lineage tracing in Order Explorer</li>
+                                <li><strong>Refund Projection</strong>: Extract refund_id from semantic ID (pattern: RFD-XXX), group refunds by refund_id, take latest version per refund_id (order_explorer.py:308-333)</li>
                             </ul>
                         </div>
 
@@ -742,6 +778,22 @@
                                 <li>Query all components with semantic ID = "cs-ORD-001-BaseFare"</li>
                                 <li>Result: v1 (500000, is_refund=0), v2 (-200000, is_refund=1)</li>
                                 <li>Net amount = 300000</li>
+                            </ul>
+                        </div>
+
+                        <div class="test-case">
+                            <div class="test-case-title">Test Case 3a: Refund Correction (Projection by refund_id)</div>
+                            <ul>
+                                <li>Initial: BaseFare = 500000 (v1, semantic: cs-ORD-001-BaseFare)</li>
+                                <li>Refund issued: RFD-001 refunds -200000 (v2, semantic: cs-ORD-001-RFD-001-BaseFare)</li>
+                                <li>Refund corrected: RFD-001 refunds -250000 (v3, semantic: cs-ORD-001-RFD-001-BaseFare)</li>
+                                <li>Verify lineage net calculation groups by refund_id:
+                                    <ul>
+                                        <li>Latest original: 500000 (v1)</li>
+                                        <li>Latest RFD-001: -250000 (v3) ← only latest version counted</li>
+                                        <li>Net amount = 250000 (NOT 500000 - 200000 - 250000 = 50000)</li>
+                                    </ul>
+                                </li>
                             </ul>
                         </div>
 

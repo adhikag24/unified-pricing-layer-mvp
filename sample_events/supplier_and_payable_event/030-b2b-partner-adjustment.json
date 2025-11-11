@@ -1,0 +1,33 @@
+{
+    "event_id": "evt_penalty_004",
+    "event_type": "PartnerAdjustmentEvent",
+    "schema_version": "partner.adjustment.v1",
+    "order_id": "1200496236",
+    "order_detail_id": "1200917821",
+    "emitted_at": "2025-01-13T09:00:00Z",
+    "emitter_service": "salesforce-ops",
+    "idempotency_key": "sf_penalty_OD-001_20250113",
+    "party": {
+      "party_type": "AFFILIATE",
+      "party_id": "100005361",
+      "party_name": "Partner CFD Non IDR - Accommodation - Invoicing"
+    },
+    "line": {
+      "obligation_type": "AFFILIATE_PENALTY",
+      "amount": 500000,
+      "amount_effect": "INCREASES_PAYABLE",
+      "currency": "IDR",
+      "calculation": {
+        "basis": "sla_breach",
+        "rate": 1.0
+      },
+      "description": "Failed check-in compensation per SLA - Case SF-2025-00123"
+    },
+    "meta": {
+      "salesforce_case_id": "SF-2025-00123",
+      "sla_breach_type": "failed_check_in",
+      "approved_by": "ops-manager@tiket.com",
+      "approval_date": "2025-01-13T08:30:00Z"
+    }
+  }
+  

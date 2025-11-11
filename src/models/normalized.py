@@ -85,12 +85,13 @@ class NormalizedSupplierTimeline(BaseModel):
 
 
 class NormalizedRefundTimeline(BaseModel):
-    """Refund timeline entry"""
+    """Normalized refund timeline entry (after Order Core processing)"""
     event_id: str
     order_id: str
     refund_id: str
-    refund_timeline_version: int
+    refund_timeline_version: int  # Assigned by Order Core
     event_type: str
+    status: str  # INITIATED, PROCESSING, ISSUED, CLOSED, FAILED
     refund_amount: int
     currency: str
     refund_reason: Optional[str] = None
