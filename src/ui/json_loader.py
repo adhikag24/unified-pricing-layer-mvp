@@ -42,12 +42,39 @@ def filename_to_display_name(filename: str) -> str:
     return ' '.join(capitalized_parts)
 
 
-def load_json_files_from_directory(directory_path: str) -> List[Tuple[str, str, Dict]]:
+def get_available_topics(category: str) -> List[str]:
     """
-    Load all JSON files from a directory.
+    Get list of available topic folders for a category.
 
     Args:
-        directory_path: Absolute path to directory containing JSON files
+        category: One of: pricing_events, payment_timeline,
+                 supplier_and_payable_event, refund_timeline, refund_components
+
+    Returns:
+        List of topic folder names (sorted alphabetically)
+    """
+    category_dir = get_sample_events_directory(category)
+
+    if not os.path.exists(category_dir):
+        return []
+
+    # Get all subdirectories (topics)
+    topics = []
+    for item in os.listdir(category_dir):
+        item_path = os.path.join(category_dir, item)
+        if os.path.isdir(item_path):
+            topics.append(item)
+
+    return sorted(topics)
+
+
+def load_json_files_from_directory(directory_path: str, topic: str = None) -> List[Tuple[str, str, Dict]]:
+    """
+    Load all JSON files from a directory, optionally filtered by topic.
+
+    Args:
+        directory_path: Absolute path to directory containing JSON files or topic subdirectories
+        topic: Optional topic subdirectory name to filter files
 
     Returns:
         List of tuples: (display_name, filename, json_content)
@@ -57,6 +84,12 @@ def load_json_files_from_directory(directory_path: str) -> List[Tuple[str, str, 
 
     if not os.path.exists(directory_path):
         return results
+
+    # If topic is specified, look in the topic subdirectory
+    if topic:
+        directory_path = os.path.join(directory_path, topic)
+        if not os.path.exists(directory_path):
+            return results
 
     # Get all JSON files
     json_files = sorted([f for f in os.listdir(directory_path) if f.endswith('.json')])

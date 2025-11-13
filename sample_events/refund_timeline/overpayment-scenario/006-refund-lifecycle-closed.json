@@ -1,0 +1,25 @@
+{
+  "event_id": "evt_refund_closed_001",
+  "event_type": "refund.closed",
+  "schema_version": "refund.timeline.v1",
+  "order_id": "ORD-8001",
+  "refund_id": "RFD-OVERPAY-001",
+  "emitted_at": "2025-01-16T14:30:00Z",
+  "emitter_service": "refund-service",
+  "status": "Closed",
+  "refund_amount": 100000,
+  "currency": "IDR",
+  "refund_reason": "Customer overpayment - excess funds returned",
+  "refund_method": "bank_transfer",
+  "meta": {
+    "refund_type": "overpayment",
+    "is_payment_adjustment": true,
+    "creates_pricing_component": false,
+    "bank_account": "BCA •••••7890",
+    "transfer_reference": "TRF-REFUND-8001-001",
+    "completed_at": "2025-01-16T14:30:00Z",
+    "processing_time_hours": 27.5,
+    "note": "Payment adjustment refund - no pricing component created"
+  },
+  "idempotency_key": "refund_timeline_ORD-8001_RFD-OVERPAY-001_closed"
+}

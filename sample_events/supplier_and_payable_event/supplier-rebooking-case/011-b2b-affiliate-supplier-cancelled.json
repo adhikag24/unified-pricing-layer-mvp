@@ -10,13 +10,10 @@
     "supplier_id": "NATIVE",
     "booking_code": "1859696",
     "supplier_ref": "1859696",
+    "fulfillment_instance_id": null,
     "amount_due": null,
     "amount_basis": "net",
-    "currency": "IDR",
-    "cancellation": {
-      "fee_amount": 0,
-      "fee_currency": "IDR"
-    }
+    "currency": "IDR"
   },
   "parties": [],
   "idempotency_key": "1200496236:1200917821:NATIVE:cancelled_nofee"

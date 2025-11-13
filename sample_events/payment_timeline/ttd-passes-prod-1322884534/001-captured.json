@@ -1,0 +1,30 @@
+{
+    "event_type": "PaymentLifecycle",
+    "schema_version": "payment.timeline.v1",
+    "order_id": "1322884534",
+    "emitted_at": "2025-09-13T06:15:30.000000Z",
+    "emitter_service": "payment-core",
+    "payment": {
+      "status": "Captured",
+      "payment_method": {
+        "channel": "TIKETPOINT",
+        "provider": "TIKETPOINT",
+        "brand": "TIKETPOINT"
+      },
+      "authorized_amount": 0,
+      "captured_amount": 0,
+      "captured_amount_total": 0,
+      "captured_at": "2025-09-13T06:15:30.000000Z",
+      "currency": "IDR",
+      "pg_reference_id": null,
+      "instrument": {
+        "type": "LOYALTY",
+        "display_hint": "Promo Code Worth -416898.0 IDR",
+        "loyalty": {
+          "points_used": 416898,
+          "account_id": "21153418",
+          "program": "TiketPoints"
+        }
+      }
+    }
+  }

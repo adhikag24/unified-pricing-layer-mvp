@@ -225,7 +225,7 @@ def render_supplier_timeline_table(db, selected_order: str):
     - `supplier_timeline_version`: Monotonic version per order_detail
     - `status`: Supplier state (ISSUED, Confirmed, CancelledNoFee, CancelledWithFee)
     - `amount`: Amount due to supplier (baseline obligation)
-    - `cancellation_fee_amount`: Fee charged if status = CancelledWithFee
+    - ~~`cancellation_fee_amount`~~: **DEPRECATED** - Fees now in payable lines with `obligation_type='CANCELLATION_FEE'`
     """)
 
     cursor = db.conn.cursor()

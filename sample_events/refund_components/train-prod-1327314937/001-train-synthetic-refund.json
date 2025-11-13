@@ -13,7 +13,7 @@
           "order_detail_id": "1365755656",
           "profile_id": "216709946"
         },
-        "description": "Partial refund - 1 night",
+        "description": "Partial refund - 1 pax",
         "refund_of_component_semantic_id": "cs-1327314937-OD-1365755656-PRO-216709946-BaseFare",
         "meta": {
           "refund_reason": "customer_cancelled"

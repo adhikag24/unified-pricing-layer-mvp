@@ -477,103 +477,168 @@ def render_supplier_timeline(db, order_id):
         st.markdown(f"**Latest Status**: `{latest['event_type']}` (v{latest['supplier_timeline_version']})")
 
 
+def _render_party_payables(parties, supplier_baseline, currency):
+    """Helper to render party payables with obligations breakdown"""
+    if not parties:
+        st.caption("ℹ️ No party payables (legacy format)")
+        return
+
+    for party in parties:
+        party_type = party.get('party_type', 'UNKNOWN')
+        party_type_badge = {
+            'SUPPLIER': '🏪',
+            'AFFILIATE': '🤝',
+            'TAX_AUTHORITY': '🏛️',
+            'INTERNAL': '🏢'
+        }.get(party_type, '❓')
+
+        # Party header with compact display
+        st.markdown(f"**{party_type_badge} {party['party_name']}** `{party_type}`")
+
+        # Show quick summary
+        party_total = party['total_payable']
+        baseline_amt = party['baseline']
+        adjustment = party['total_adjustment']
+
+        if party_type == 'SUPPLIER':
+            amount_basis = supplier_baseline.get('amount_basis')
+            basis_note = f" (basis: {amount_basis})" if amount_basis else ""
+            st.caption(f"└─ Baseline: {format_currency(baseline_amt, currency)}{basis_note} | Adjustments: {format_currency(adjustment, currency)} | **Total: {format_currency(party_total, currency)}**")
+        else:
+            st.caption(f"└─ Amount: {format_currency(party_total, currency)}")
+
+        # Detailed breakdown in expander
+        if party['obligations']:
+            with st.expander(f"📋 View {len(party['obligations'])} Obligation(s)"):
+                for obl in party['obligations']:
+                    # Color code by amount_effect
+                    if obl['amount_effect'] == 'INCREASES_PAYABLE':
+                        effect_color = "🔺"
+                        effect_text = "INCREASES"
+                    elif obl['amount_effect'] == 'DECREASES_PAYABLE':
+                        effect_color = "🔻"
+                        effect_text = "DECREASES"
+                    else:
+                        effect_color = "💰"
+                        effect_text = "COST"
+
+                    st.markdown(f"**{effect_color} {obl['obligation_type']}** ({effect_text})")
+                    st.write(f"• Amount: {format_currency(obl['amount'], obl['currency'])}")
+                    if obl.get('calculation_description'):
+                        st.caption(f"  💡 {obl['calculation_description']}")
+                    st.markdown("---")
+
+
 def render_supplier_payables(db, order_id):
-    """Show supplier payable breakdown for order using party-level projection with amount_effect"""
+    """Show supplier payable breakdown for order using party-level projection with amount_effect
 
-    st.markdown("### Supplier Payable Breakdown (v2 with Amount Effect)")
-    st.caption("🆕 Party-level projection: Latest obligation per (party_id, obligation_type) with amount_effect directionality")
+    NEW: Supports multi-instance payables (e.g., passes with multiple redemptions)
+    """
 
-    # Get total effective payables (v2 with party-level projection)
+    st.markdown("### 💼 Supplier Payable Breakdown")
+    st.caption("🆕 Multi-instance support: Tracks payables per fulfillment (redemptions, journeys, legs, etc.)")
+
+    # Get total effective payables (v2 with party-level projection + multi-instance)
     payables_data = db.get_total_effective_payables(order_id)
 
     if not payables_data:
         st.info("No supplier payables recorded for this order")
         return
 
-    # Display each order_detail
+    # Group by order_detail_id
+    from collections import defaultdict
+    detail_groups = defaultdict(list)
+    for item in payables_data:
+        detail_groups[item['order_detail_id']].append(item)
+
     grand_total_payable = 0
     currency = 'IDR'
 
-    for detail_data in payables_data:
-        order_detail_id = detail_data['order_detail_id']
-        supplier_baseline = detail_data['supplier_baseline']
-        parties = detail_data.get('parties', [])  # NEW: Party-separated payables
-        total_payable = detail_data['total_payable']
+    for order_detail_id, instances in detail_groups.items():
+        # Check if this is multi-instance:
+        # - Multiple fulfillment_instance_id values (passes redemptions, train legs, etc.)
+        # - Multiple supplier_reference_id values (rebooking scenario)
+        has_multi_instance = (
+            any(inst['fulfillment_instance_id'] is not None for inst in instances) or
+            len(set(inst['supplier_reference_id'] for inst in instances)) > 1
+        )
 
-        # Status badge
-        status_colors = {
-            'Confirmed': '🟢', 'ISSUED': '🟢', 'Invoiced': '🟢', 'Settled': '🟢',
-            'CancelledWithFee': '🟡', 'CancelledNoFee': '⚪', 'Voided': '⚪'
-        }
-        status = supplier_baseline['status']
-        badge = status_colors.get(status, '🔵')
+        # Get currency from first instance
+        first_instance = instances[0]
+        currency = first_instance['supplier_baseline']['currency'] or 'IDR'
 
         # Header
-        st.markdown(f"### Order Detail: {order_detail_id}")
-        st.caption(f"Status: {badge} **{status}** | Supplier: **{supplier_baseline['supplier_id']}**")
+        st.markdown(f"### 📦 Order Detail: `{order_detail_id}`")
 
-        currency = supplier_baseline['currency'] or 'IDR'
+        # Calculate detail-level total
+        detail_total = sum(inst['total_payable'] for inst in instances)
 
-        # Display party-separated payables
-        if parties:
-            for party in parties:
-                party_type = party.get('party_type', 'UNKNOWN')
-                party_type_badge = {
-                    'SUPPLIER': '🏪',
-                    'AFFILIATE': '🤝',
-                    'TAX_AUTHORITY': '🏛️'
-                }.get(party_type, '❓')
+        if has_multi_instance:
+            # Multi-instance display (e.g., passes redemptions, supplier rebooking)
+            instance_type = "fulfillment" if any(inst['fulfillment_instance_id'] is not None for inst in instances) else "supplier"
+            st.markdown(f"**Multi-Instance ({instance_type.title()})** ({len(instances)} instances)")
+            st.markdown("---")
 
-                # Party header
-                st.markdown(f"#### {party_type_badge} {party['party_name']} `{party_type}`")
-                st.caption(f"Party ID: {party['party_id']}")
+            for idx, instance_data in enumerate(instances, 1):
+                fulfillment_id = instance_data['fulfillment_instance_id']
+                supplier_ref = instance_data.get('supplier_reference_id', 'N/A')
+                supplier_baseline = instance_data['supplier_baseline']
+                parties = instance_data.get('parties', [])
+                total_payable = instance_data['total_payable']
+                status = supplier_baseline['status']
 
-                # Metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    baseline_amt = party['baseline']
-                    if party_type == 'SUPPLIER':
-                        amount_basis = supplier_baseline.get('amount_basis')
-                        basis_label = f" ({amount_basis})" if amount_basis else ""
-                        st.metric(f"Baseline{basis_label}", format_currency(baseline_amt, currency))
-                    else:
-                        st.metric("Baseline", format_currency(baseline_amt, currency))
-                with col2:
-                    adjustment = party['total_adjustment']
-                    st.metric("Adjustments (Net)", format_currency(adjustment, currency), delta=adjustment)
-                with col3:
-                    party_total = party['total_payable']
-                    st.metric("Total Payable", format_currency(party_total, currency))
-
-                # Show reason for baseline
-                if party['baseline'] != 0:
-                    st.caption(f"💡 {party['baseline_reason']}")
-
-                # Party obligations breakdown
-                if party['obligations']:
-                    with st.expander("📋 View Obligation Details"):
-                        for obl in party['obligations']:
-                            # Color code by amount_effect
-                            if obl['amount_effect'] == 'INCREASES_PAYABLE':
-                                effect_color = "🔺"  # Red triangle
-                                effect_text = "INCREASES"
-                            else:
-                                effect_color = "🔻"  # Green triangle
-                                effect_text = "DECREASES"
-
-                            st.markdown(f"**{effect_color} {obl['obligation_type']}** ({effect_text} PAYABLE)")
-                            st.write(f"• Amount: {format_currency(obl['amount'], obl['currency'])}")
-                            if obl.get('calculation_description'):
-                                st.caption(f"  💡 {obl['calculation_description']}")
-                            st.markdown("---")
+                # Instance badge and label
+                if fulfillment_id is None:
+                    # Supplier rebooking or booking-level
+                    instance_badge = "🏪"
+                    instance_label = f"Supplier: **{supplier_baseline['supplier_id']}** | Booking: `{supplier_ref}`"
                 else:
-                    st.caption("ℹ️ No obligations for this party")
+                    # Fulfillment-level (passes redemption, train leg, etc.)
+                    instance_badge = "🎟️"
+                    instance_label = f"Fulfillment: `{fulfillment_id}` | Supplier: **{supplier_baseline['supplier_id']}**"
 
-                st.markdown("---")
+                # Status badge
+                status_colors = {
+                    'Confirmed': '🟢', 'ISSUED': '🟢', 'Invoiced': '🟢', 'Settled': '🟢',
+                    'CancelledWithFee': '🟡', 'CancelledNoFee': '⚪', 'Voided': '⚪'
+                }
+                badge = status_colors.get(status, '🔵')
+
+                st.markdown(f"#### {instance_badge} {instance_label}")
+                st.caption(f"Status: {badge} **{status}** | Total Payable: **{format_currency(total_payable, currency)}**")
+
+                # Show parties for this instance
+                _render_party_payables(parties, supplier_baseline, currency)
+
+                if idx < len(instances):
+                    st.markdown("---")
+
+            # Instance summary
+            st.markdown("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**Total Payable (All {len(instances)} Instances):**")
+            with col2:
+                st.markdown(f"**{format_currency(detail_total, currency)}**")
         else:
-            st.caption("ℹ️ No party payables (legacy format)")
+            # Single instance display (traditional model)
+            detail_data = instances[0]
+            supplier_baseline = detail_data['supplier_baseline']
+            parties = detail_data.get('parties', [])
+            total_payable = detail_data['total_payable']
+            status = supplier_baseline['status']
 
-        grand_total_payable += total_payable
+            status_colors = {
+                'Confirmed': '🟢', 'ISSUED': '🟢', 'Invoiced': '🟢', 'Settled': '🟢',
+                'CancelledWithFee': '🟡', 'CancelledNoFee': '⚪', 'Voided': '⚪'
+            }
+            badge = status_colors.get(status, '🔵')
+            st.caption(f"Status: {badge} **{status}** | Total Payable: **{format_currency(total_payable, currency)}**")
+
+            # Show parties
+            _render_party_payables(parties, supplier_baseline, currency)
+
+        grand_total_payable += detail_total
         st.markdown("---")
 
     # Grand total
@@ -587,8 +652,10 @@ def render_supplier_payables(db, order_id):
         | Status | Badge | Baseline | Party Obligations Included |
         |--------|-------|----------|---------------------------|
         | Confirmed, ISSUED, Invoiced, Settled | 🟢 | `amount_due` (with amount_basis) | ALL (timeline + standalone) |
-        | CancelledWithFee | 🟡 | `cancellation_fee_amount` | ONLY standalone (version = -1) |
+        | CancelledWithFee | 🟡 | 0 (fee in party lines) | Latest version only (includes `CANCELLATION_FEE` line) |
         | CancelledNoFee, Voided | ⚪ | 0 | ONLY standalone (version = -1) |
+
+        **Note**: Cancellation fees are now tracked as regular payable lines with `obligation_type='CANCELLATION_FEE'` and `amount_effect='INCREASES_PAYABLE'`.
 
         **Amount Effect Directionality:**
         - 🔺 **INCREASES_PAYABLE**: We owe more (e.g., affiliate commission, tax, penalty)

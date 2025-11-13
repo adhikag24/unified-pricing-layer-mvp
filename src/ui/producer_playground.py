@@ -6,7 +6,7 @@ import streamlit as st
 import json
 from datetime import datetime
 from src.ingestion.pipeline import IngestionPipeline
-from src.ui.json_loader import load_json_files_from_directory, get_sample_events_directory
+from src.ui.json_loader import load_json_files_from_directory, get_sample_events_directory, get_available_topics
 from src.ui.json_editor import render_json_editor_with_hints, render_json_editor
 
 
@@ -81,9 +81,22 @@ def render_event_tab(
         st.session_state[last_scenario_key] = None
 
     if edit_mode == "Form Mode (Quick)":
-        # Load JSON files from directory
+        # Get available topics for this category
+        topics = get_available_topics(category_dir)
+
+        # Topic dropdown
+        topic = None
+        if topics:
+            topic = st.selectbox(
+                "Select Topic",
+                topics,
+                key=f"{cache_key}_topic",
+                help="Select a topic to filter scenarios"
+            )
+
+        # Load JSON files from directory (filtered by topic if selected)
         sample_dir = get_sample_events_directory(category_dir)
-        json_files = load_json_files_from_directory(sample_dir)
+        json_files = load_json_files_from_directory(sample_dir, topic=topic)
 
         # Create dropdown options
         dropdown_options = ["Custom JSON"]  # Always have custom option

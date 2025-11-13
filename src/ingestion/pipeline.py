@@ -591,18 +591,38 @@ class IngestionPipeline:
             supplier_id = event.supplier.supplier_id
             booking_code = event.supplier.booking_code
             supplier_reference_id = event.supplier.supplier_ref
+            fulfillment_instance_id = getattr(event.supplier, 'fulfillment_instance_id', None)  # NEW: Multi-instance payables
             amount = event.supplier.amount_due
             amount_basis_val = event.supplier.amount_basis
             amount_basis = amount_basis_val.value if hasattr(amount_basis_val, 'value') else amount_basis_val if amount_basis_val else None
             currency = event.supplier.currency
             status = event.supplier.status
 
-            # Extract cancellation fee if present
+            # Extract cancellation fee if present (DEPRECATED - use parties array instead)
             cancellation_fee_amount = None
             cancellation_fee_currency = None
             if event.supplier.cancellation:
                 cancellation_fee_amount = event.supplier.cancellation.fee_amount
                 cancellation_fee_currency = event.supplier.cancellation.fee_currency
+
+                # Migration warning: Check if fee should be in parties array
+                if cancellation_fee_amount and cancellation_fee_amount > 0:
+                    has_cancellation_fee_line = False
+                    if event.parties:
+                        for party in event.parties:
+                            for line in party.lines:
+                                obligation_type_val = line.obligation_type
+                                obligation_type = obligation_type_val.value if hasattr(obligation_type_val, 'value') else obligation_type_val
+                                if obligation_type == 'CANCELLATION_FEE':
+                                    has_cancellation_fee_line = True
+                                    break
+                            if has_cancellation_fee_line:
+                                break
+
+                    if not has_cancellation_fee_line:
+                        print(f"⚠️  MIGRATION WARNING: Event {event.event_id} uses deprecated cancellation.fee_amount field. "
+                              f"Please update to use parties array with obligation_type='CANCELLATION_FEE'. "
+                              f"Backward compatibility is maintained but will be removed in future versions.")
 
             # Extract FX context and entity context as JSON strings
             fx_context_json = None
@@ -627,6 +647,7 @@ class IngestionPipeline:
                 supplier_id=supplier_id,
                 booking_code=booking_code,
                 supplier_reference_id=supplier_reference_id,
+                fulfillment_instance_id=fulfillment_instance_id,  # NEW: Multi-instance payables
                 amount=amount,
                 currency=currency,
                 status=status,
@@ -667,9 +688,11 @@ class IngestionPipeline:
                             'event_id': normalized.event_id,
                             'order_id': event.order_id,
                             'order_detail_id': event.order_detail_id,
+                            'supplier_reference_id': supplier_reference_id,  # Link to booking
+                            'fulfillment_instance_id': fulfillment_instance_id,  # NEW: Multi-instance payables
                             'supplier_timeline_version': supplier_timeline_version,  # Assigned by Order Core
                             'obligation_type': obligation_type,
-                            'party_type': party_type,  # NEW: Store party_type
+                            'party_type': party_type,  # Store party_type
                             'party_id': party_id,
                             'party_name': party_name,
                             'amount': int(line.amount) if isinstance(line.amount, float) else line.amount,

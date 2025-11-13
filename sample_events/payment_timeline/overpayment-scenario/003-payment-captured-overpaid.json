@@ -1,0 +1,35 @@
+{
+  "event_id": "evt_payment_captured_001",
+  "event_type": "PaymentLifecycle",
+  "schema_version": "payment.timeline.v1",
+  "order_id": "ORD-8001",
+  "emitted_at": "2025-01-15T10:30:00Z",
+  "emitter_service": "payment-service",
+  "payment": {
+    "status": "Captured",
+    "payment_id": "pi_overpayment_001",
+    "pg_reference_id": "PG-REF-8001-CAPTURED",
+    "payment_method": {
+      "channel": "BANK_TRANSFER",
+      "provider": "BCA",
+      "brand": "Manual ATM Transfer"
+    },
+    "currency": "IDR",
+    "authorized_amount": 1000000,
+    "captured_amount": 1100000,
+    "captured_amount_total": 1100000,
+    "instrument": {
+      "type": "BANK_TRANSFER",
+      "account_number_masked": "•••••7890",
+      "bank_name": "BCA",
+      "transfer_method": "ATM"
+    }
+  },
+  "meta": {
+    "overpayment_detected": true,
+    "overpayment_amount": 100000,
+    "overpayment_reason": "Customer manually transferred via ATM with incorrect amount",
+    "requires_refund": true
+  },
+  "idempotency_key": "payment_ORD-8001_captured_001"
+}

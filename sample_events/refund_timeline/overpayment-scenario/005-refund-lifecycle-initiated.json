@@ -1,0 +1,26 @@
+{
+  "event_id": "evt_refund_initiated_001",
+  "event_type": "refund.initiated",
+  "schema_version": "refund.timeline.v1",
+  "order_id": "ORD-8001",
+  "refund_id": "RFD-OVERPAY-001",
+  "emitted_at": "2025-01-15T11:00:00Z",
+  "emitter_service": "refund-service",
+  "status": "Initiated",
+  "refund_amount": 100000,
+  "currency": "IDR",
+  "refund_reason": "Customer overpayment - excess funds returned",
+  "refund_method": "bank_transfer",
+  "meta": {
+    "refund_type": "overpayment",
+    "is_payment_adjustment": true,
+    "creates_pricing_component": false,
+    "original_order_total": 1000000,
+    "payment_captured": 1100000,
+    "overpayment_amount": 100000,
+    "bank_account": "BCA •••••7890",
+    "estimated_completion": "2025-01-17T00:00:00Z",
+    "note": "Payment adjustment refund - no pricing component created"
+  },
+  "idempotency_key": "refund_timeline_ORD-8001_RFD-OVERPAY-001_initiated"
+}

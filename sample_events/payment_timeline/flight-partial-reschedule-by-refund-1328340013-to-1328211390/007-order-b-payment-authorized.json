@@ -1,0 +1,24 @@
+{
+  "event_id": "evt_payment_auth_b_001",
+  "event_type": "PaymentLifecycle",
+  "schema_version": "payment.timeline.v1",
+  "order_id": "1328211390",
+  "emitted_at": "2025-11-11T11:05:00Z",
+  "emitter_service": "payment-service",
+  "payment": {
+    "status": "Authorized",
+    "payment_id": "1354882846",
+    "payment_method": {
+      "channel": "CORPORATE_BILLING",
+      "provider": "INTERNAL",
+      "brand": "INTERNAL"
+    },
+    "currency": "IDR",
+    "authorized_amount": 1105538,
+    "authorized_at": "2025-11-11T11:05:00Z",
+    "captured_amount": 0,
+    "captured_amount_total": 0,
+    "instrument": null
+  },
+  "idempotency_key": "payment_0328211390_authorized_001"
+}

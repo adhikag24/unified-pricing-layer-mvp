@@ -12,20 +12,16 @@
     "supplier_id": "NATIVE",
     "booking_code": "NATIVE-12345",
     "supplier_ref": "REF-NATIVE-001",
+    "fulfillment_instance_id": null,
     "amount_due": null,
     "amount_basis": null,
     "currency": "IDR",
-    "cancellation": {
-      "fee_amount": 50000,
-      "fee_currency": "IDR",
-      "replaces_original_cost": true
-    },
     "fx_context": {
       "timestamp_fx_rate": "2025-01-11T14:00:00Z",
       "payment_currency": "IDR",
       "supply_currency": "IDR",
       "record_currency": "IDR",
-      "gbv_currency": "USD",
+      "gbv_currency": "IDR",
       "payment_value": 50000,
       "supply_to_payment_fx_rate": 1.0,
       "supply_to_record_fx_rate": 1.0,
@@ -36,7 +32,26 @@
       "entity_code": "TNPL"
     }
   },
-  "parties": [],
+  "parties": [
+    {
+      "party_type": "SUPPLIER",
+      "party_id": "NATIVE",
+      "party_name": "Native Supplier",
+      "lines": [
+        {
+          "obligation_type": "CANCELLATION_FEE",
+          "amount": 50000,
+          "amount_effect": "INCREASES_PAYABLE",
+          "currency": "IDR",
+          "calculation": {
+            "basis": "supplier_policy",
+            "rate": null
+          },
+          "description": "Non-refundable cancellation fee per supplier policy"
+        }
+      ]
+    }
+  ],
   "meta": {
     "cancellation_reason": "Customer requested cancellation",
     "cancelled_at": "2025-01-11T14:00:00Z"

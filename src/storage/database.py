@@ -22,12 +22,61 @@ class Database:
         self.conn.row_factory = sqlite3.Row  # Enable column access by name
         return self.conn
 
+    def _ensure_connected(self):
+        """Ensure database connection is open, reconnect if needed"""
+        if not self.conn:
+            self.connect()
+            return
+
+        # Check if connection is still alive
+        try:
+            self.conn.execute("SELECT 1")
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            # Connection is closed or broken, reconnect
+            self.connect()
+
+    def _run_migrations(self, cursor):
+        """Run schema migrations for existing databases"""
+
+        # Helper function to check if table exists
+        def table_exists(table_name):
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,)
+            )
+            return cursor.fetchone() is not None
+
+        # Migration 1: Add fulfillment_instance_id to supplier_timeline (2025-11-13)
+        if table_exists('supplier_timeline'):
+            try:
+                cursor.execute("SELECT fulfillment_instance_id FROM supplier_timeline LIMIT 1")
+            except sqlite3.OperationalError:
+                # Column doesn't exist, add it
+                print("🔄 Running migration: Adding fulfillment_instance_id to supplier_timeline...")
+                cursor.execute("ALTER TABLE supplier_timeline ADD COLUMN fulfillment_instance_id TEXT")
+                self.conn.commit()
+                print("✅ Migration complete: supplier_timeline.fulfillment_instance_id added")
+
+        # Migration 2: Add fulfillment_instance_id to supplier_payable_lines (2025-11-13)
+        if table_exists('supplier_payable_lines'):
+            try:
+                cursor.execute("SELECT fulfillment_instance_id FROM supplier_payable_lines LIMIT 1")
+            except sqlite3.OperationalError:
+                # Column doesn't exist, add it
+                print("🔄 Running migration: Adding fulfillment_instance_id to supplier_payable_lines...")
+                cursor.execute("ALTER TABLE supplier_payable_lines ADD COLUMN fulfillment_instance_id TEXT")
+                self.conn.commit()
+                print("✅ Migration complete: supplier_payable_lines.fulfillment_instance_id added")
+
     def initialize_schema(self):
-        """Create all tables and views"""
+        """Create all tables and views with migration support"""
         if not self.conn:
             self.connect()
 
         cursor = self.conn.cursor()
+
+        # Run migrations before creating tables
+        self._run_migrations(cursor)
 
         # Append-only fact table: Pricing Components
         cursor.execute("""
@@ -108,8 +157,9 @@ class Database:
                 supplier_id TEXT NOT NULL,
                 booking_code TEXT,
                 supplier_reference_id TEXT,
+                fulfillment_instance_id TEXT,  -- NEW: For multi-instance payables (passes, multi-ride, etc.)
                 amount INTEGER,
-                amount_basis TEXT,  -- NEW: "gross" or "net"
+                amount_basis TEXT,  -- "gross", "net", or "redemption-triggered"
                 currency TEXT,
                 status TEXT,
                 cancellation_fee_amount INTEGER,
@@ -128,6 +178,12 @@ class Database:
             ON supplier_timeline(order_id, order_detail_id, supplier_timeline_version DESC)
         """)
 
+        # New composite index for multi-instance payables
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_supplier_fulfillment_instance
+            ON supplier_timeline(order_id, order_detail_id, supplier_reference_id, fulfillment_instance_id, supplier_timeline_version DESC)
+        """)
+
         # Append-only fact table: Supplier Payable Lines (multi-party breakdown)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS supplier_payable_lines (
@@ -135,9 +191,11 @@ class Database:
                 event_id TEXT NOT NULL,
                 order_id TEXT NOT NULL,
                 order_detail_id TEXT NOT NULL,
+                supplier_reference_id TEXT,  -- Booking code/reference for scoped projection
+                fulfillment_instance_id TEXT,  -- NEW: For multi-instance payables (passes, multi-ride, etc.)
                 supplier_timeline_version INTEGER NOT NULL,
                 obligation_type TEXT NOT NULL,
-                party_type TEXT,  -- "SUPPLIER", "AFFILIATE", "TAX_AUTHORITY"
+                party_type TEXT,  -- "SUPPLIER", "AFFILIATE", "TAX_AUTHORITY", "INTERNAL"
                 party_id TEXT NOT NULL,
                 party_name TEXT,
                 amount INTEGER NOT NULL,
@@ -154,6 +212,17 @@ class Database:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_payable_lines_order
             ON supplier_payable_lines(order_id, order_detail_id, supplier_timeline_version DESC)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_payable_lines_supplier_ref
+            ON supplier_payable_lines(order_id, order_detail_id, supplier_reference_id, party_id, obligation_type)
+        """)
+
+        # New composite index for multi-instance payables
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_payable_lines_fulfillment
+            ON supplier_payable_lines(order_id, order_detail_id, supplier_reference_id, fulfillment_instance_id, party_id, obligation_type)
         """)
 
         # Append-only fact table: Refund Timeline
@@ -278,12 +347,13 @@ class Database:
         self.conn.commit()
 
     def insert_supplier_timeline(self, entry: dict):
-        """Insert supplier timeline entry (supports both v1 and v2 schema)"""
+        """Insert supplier timeline entry (supports both v1 and v2 schema + multi-instance)"""
+        self._ensure_connected()
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT INTO supplier_timeline VALUES (
                 :event_id, :order_id, :order_detail_id, :supplier_timeline_version,
-                :event_type, :supplier_id, :booking_code, :supplier_reference_id, :amount,
+                :event_type, :supplier_id, :booking_code, :supplier_reference_id, :fulfillment_instance_id, :amount,
                 :amount_basis, :currency, :status, :cancellation_fee_amount, :cancellation_fee_currency,
                 :fx_context, :entity_context,
                 :emitter_service, :ingested_at, :emitted_at, :metadata
@@ -291,29 +361,33 @@ class Database:
         """, {
             **entry,
             'booking_code': entry.get('booking_code'),
-            'amount_basis': entry.get('amount_basis'),  # NEW: "gross" or "net"
+            'fulfillment_instance_id': entry.get('fulfillment_instance_id'),  # NEW: Multi-instance payables
+            'amount_basis': entry.get('amount_basis'),  # "gross", "net", or "redemption-triggered"
             'status': entry.get('status'),
             'cancellation_fee_amount': entry.get('cancellation_fee_amount'),
             'cancellation_fee_currency': entry.get('cancellation_fee_currency'),
-            'fx_context': entry.get('fx_context'),  # NEW: JSON string
-            'entity_context': entry.get('entity_context'),  # NEW: JSON string
+            'fx_context': entry.get('fx_context'),  # JSON string
+            'entity_context': entry.get('entity_context'),  # JSON string
             'metadata': json.dumps(entry.get('metadata')) if entry.get('metadata') else None
         })
         self.conn.commit()
 
     def insert_payable_line(self, entry: dict):
-        """Insert supplier payable line (supports both v1 and v2 schema with amount_effect and party_type)"""
+        """Insert supplier payable line (supports both v1 and v2 schema with amount_effect, party_type, and multi-instance)"""
+        self._ensure_connected()
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT INTO supplier_payable_lines VALUES (
-                :line_id, :event_id, :order_id, :order_detail_id, :supplier_timeline_version,
+                :line_id, :event_id, :order_id, :order_detail_id, :supplier_reference_id, :fulfillment_instance_id, :supplier_timeline_version,
                 :obligation_type, :party_type, :party_id, :party_name, :amount, :amount_effect, :currency,
                 :calculation_basis, :calculation_rate, :calculation_description,
                 :ingested_at, :metadata
             )
         """, {
             **entry,
-            'party_type': entry.get('party_type'),  # NEW: party_type field
+            'supplier_reference_id': entry.get('supplier_reference_id'),  # Booking-scoped projection
+            'fulfillment_instance_id': entry.get('fulfillment_instance_id'),  # NEW: Multi-instance payables
+            'party_type': entry.get('party_type'),  # Party type field
             'amount_effect': entry.get('amount_effect', 'INCREASES_PAYABLE'),  # Default to INCREASES_PAYABLE for v1
             'metadata': json.dumps(entry.get('metadata')) if entry.get('metadata') else None
         })
@@ -336,6 +410,7 @@ class Database:
 
     def insert_dlq(self, dlq_entry: dict):
         """Insert DLQ entry"""
+        self._ensure_connected()
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT INTO dlq VALUES (
@@ -447,6 +522,7 @@ class Database:
         Used by normalization layer to assign monotonic supplier_timeline_version numbers.
         Returns None if no previous versions exist.
         """
+        self._ensure_connected()
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT MAX(supplier_timeline_version) FROM supplier_timeline
@@ -587,9 +663,11 @@ class Database:
         - CancelledWithFee: baseline = cancellation_fee, EXCLUDE timeline obligations (version >= 1), keep standalone (version = -1)
         - CancelledNoFee: baseline = 0, EXCLUDE timeline obligations, keep standalone
         """
+        self._ensure_connected()
         cursor = self.conn.cursor()
 
-        # Step 1: Get latest status per order_detail (with amount_basis)
+        # Step 1: Get latest status per (order_detail_id, supplier_reference_id, fulfillment_instance_id)
+        # NEW: Multi-instance support - returns multiple rows for passes (one per redemption)
         cursor.execute("""
             WITH latest_status AS (
                 SELECT
@@ -597,6 +675,7 @@ class Database:
                     order_detail_id,
                     supplier_id,
                     supplier_reference_id,
+                    fulfillment_instance_id,
                     status,
                     amount,
                     amount_basis,
@@ -604,7 +683,8 @@ class Database:
                     currency,
                     supplier_timeline_version,
                     ROW_NUMBER() OVER (
-                        PARTITION BY order_id, order_detail_id
+                        PARTITION BY order_id, order_detail_id, supplier_reference_id,
+                                     COALESCE(fulfillment_instance_id, '__BOOKING_LEVEL__')
                         ORDER BY supplier_timeline_version DESC
                     ) as rn
                 FROM supplier_timeline
@@ -615,7 +695,7 @@ class Database:
 
         latest_statuses = [dict(zip(
             ['order_id', 'order_detail_id', 'supplier_id', 'supplier_reference_id',
-             'status', 'amount', 'amount_basis', 'cancellation_fee_amount', 'currency',
+             'fulfillment_instance_id', 'status', 'amount', 'amount_basis', 'cancellation_fee_amount', 'currency',
              'supplier_timeline_version', 'rn'],
             row
         )) for row in cursor.fetchall()]
@@ -624,18 +704,24 @@ class Database:
 
         for status_row in latest_statuses:
             order_detail_id = status_row['order_detail_id']
+            supplier_reference_id = status_row['supplier_reference_id']
+            fulfillment_instance_id = status_row['fulfillment_instance_id']  # NEW: Multi-instance support
+            fulfillment_instance_key = fulfillment_instance_id if fulfillment_instance_id else '__BOOKING_LEVEL__'  # For scoping
             status = status_row['status']
             amount_basis = status_row['amount_basis']
 
             # Calculate baseline from status
+            # NEW: Cancellation fees are now in party lines, so baseline is always 0 for cancelled
             if status in ('Confirmed', 'ISSUED', 'Invoiced', 'Settled'):
                 baseline_amount = status_row['amount'] or 0
                 baseline_reason = f"Supplier cost (status: {status}" + (f", basis: {amount_basis}" if amount_basis else "") + ")"
                 include_timeline_obligations = True
             elif status == 'CancelledWithFee':
-                baseline_amount = status_row['cancellation_fee_amount'] or 0
-                baseline_reason = f"Cancellation fee (status: {status})"
-                include_timeline_obligations = False  # Exclude timeline obligations when cancelled
+                # NEW: Fee is in party lines (CANCELLATION_FEE obligation), baseline is 0
+                # Fallback: If no CANCELLATION_FEE line exists (legacy event), use cancellation_fee_amount
+                baseline_amount = 0  # Fee will come from party lines
+                baseline_reason = f"Cancelled (status: {status}, fee in party lines)"
+                include_timeline_obligations = False  # Exclude old timeline obligations when cancelled
             elif status in ('CancelledNoFee', 'Voided'):
                 baseline_amount = 0
                 baseline_reason = f"Cancelled without fee (status: {status})"
@@ -652,21 +738,25 @@ class Database:
 
             latest_timeline_version = status_row['supplier_timeline_version']
 
-            # Check if the latest supplier_timeline_version has any payable lines
+            # Check if the latest supplier_timeline_version has any payable lines (scoped to this instance)
             cursor.execute("""
                 SELECT COUNT(*) FROM supplier_payable_lines
                 WHERE order_id = ? AND order_detail_id = ?
+                  AND supplier_reference_id = ?
+                  AND COALESCE(fulfillment_instance_id, '__BOOKING_LEVEL__') = ?
                   AND supplier_timeline_version = ?
-            """, (order_id, order_detail_id, latest_timeline_version))
+            """, (order_id, order_detail_id, supplier_reference_id, fulfillment_instance_key, latest_timeline_version))
             has_lines_in_latest_version = cursor.fetchone()[0] > 0
 
             if include_timeline_obligations:
-                # ISSUED/Confirmed: include ALL timeline obligations (party-level projection across all versions)
+                # ISSUED/Confirmed: include ALL timeline obligations (party-level projection scoped to this instance)
                 cursor.execute("""
                     WITH latest_per_party AS (
                         SELECT party_id, obligation_type, MAX(supplier_timeline_version) as latest_version
                         FROM supplier_payable_lines
                         WHERE order_id = ? AND order_detail_id = ?
+                          AND supplier_reference_id = ?
+                          AND COALESCE(fulfillment_instance_id, '__BOOKING_LEVEL__') = ?
                           AND supplier_timeline_version >= 1
                         GROUP BY party_id, obligation_type
                     )
@@ -677,32 +767,38 @@ class Database:
                       AND p.obligation_type = l.obligation_type
                       AND p.supplier_timeline_version = l.latest_version
                     WHERE p.order_id = ? AND p.order_detail_id = ?
-                """, (order_id, order_detail_id, order_id, order_detail_id))
+                      AND p.supplier_reference_id = ?
+                      AND COALESCE(p.fulfillment_instance_id, '__BOOKING_LEVEL__') = ?
+                """, (order_id, order_detail_id, supplier_reference_id, fulfillment_instance_key, order_id, order_detail_id, supplier_reference_id, fulfillment_instance_key))
                 timeline_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
                                        for row in cursor.fetchall()]
             else:
                 # CancelledWithFee/CancelledNoFee: check if latest version has lines
                 if has_lines_in_latest_version:
-                    # Scenario D: Latest version has updated parties → include ONLY those (from latest version)
+                    # Scenario D: Latest version has updated parties → include ONLY those (from latest version, scoped to instance)
                     cursor.execute("""
                         SELECT obligation_type, party_type, party_id, party_name, amount, amount_effect, currency
                         FROM supplier_payable_lines
                         WHERE order_id = ? AND order_detail_id = ?
+                          AND supplier_reference_id = ?
+                          AND COALESCE(fulfillment_instance_id, '__BOOKING_LEVEL__') = ?
                           AND supplier_timeline_version = ?
-                    """, (order_id, order_detail_id, latest_timeline_version))
+                    """, (order_id, order_detail_id, supplier_reference_id, fulfillment_instance_key, latest_timeline_version))
                     timeline_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
                                            for row in cursor.fetchall()]
                 else:
                     # Scenario B: Latest version has NO lines (empty parties array) → exclude all timeline obligations
                     timeline_obligations = []
 
-            # Get standalone adjustments (version = -1) separately - ALWAYS included
+            # Get standalone adjustments (version = -1) separately - ALWAYS included (scoped to instance)
             cursor.execute("""
                 SELECT obligation_type, party_type, party_id, party_name, amount, amount_effect, currency
                 FROM supplier_payable_lines
                 WHERE order_id = ? AND order_detail_id = ?
+                  AND supplier_reference_id = ?
+                  AND COALESCE(fulfillment_instance_id, '__BOOKING_LEVEL__') = ?
                   AND supplier_timeline_version = -1
-            """, (order_id, order_detail_id))
+            """, (order_id, order_detail_id, supplier_reference_id, fulfillment_instance_key))
 
             standalone_obligations = [dict(zip(['obligation_type', 'party_type', 'party_id', 'party_name', 'amount', 'amount_effect', 'currency'], row))
                                      for row in cursor.fetchall()]
@@ -733,15 +829,29 @@ class Database:
             parties_payables = []
 
             # Always include supplier party (even if no obligations)
+            supplier_obligations = party_groups[supplier_party_id]['obligations'] if supplier_party_id in party_groups else []
+            supplier_total_adjustment = party_groups[supplier_party_id]['total_adjustment'] if supplier_party_id in party_groups else 0
+
+            # MIGRATION FALLBACK: If CancelledWithFee but no CANCELLATION_FEE line, use legacy field
+            if status == 'CancelledWithFee' and status_row['cancellation_fee_amount']:
+                has_cancellation_fee_line = any(
+                    obl['obligation_type'] == 'CANCELLATION_FEE'
+                    for obl in supplier_obligations
+                )
+                if not has_cancellation_fee_line and status_row['cancellation_fee_amount'] > 0:
+                    # Legacy event - add fee as baseline (deprecated pattern)
+                    baseline_amount = status_row['cancellation_fee_amount']
+                    baseline_reason = f"Cancellation fee (legacy - from cancellation_fee_amount field)"
+
             supplier_payable = {
                 'party_id': supplier_party_id,
                 'party_type': 'SUPPLIER',
                 'party_name': status_row['supplier_id'],  # Use supplier_id as name fallback
                 'baseline': baseline_amount,
                 'baseline_reason': baseline_reason,
-                'obligations': party_groups[supplier_party_id]['obligations'] if supplier_party_id in party_groups else [],
-                'total_adjustment': party_groups[supplier_party_id]['total_adjustment'] if supplier_party_id in party_groups else 0,
-                'total_payable': baseline_amount + (party_groups[supplier_party_id]['total_adjustment'] if supplier_party_id in party_groups else 0),
+                'obligations': supplier_obligations,
+                'total_adjustment': supplier_total_adjustment,
+                'total_payable': baseline_amount + supplier_total_adjustment,
                 'currency': status_row['currency']
             }
             parties_payables.append(supplier_payable)
@@ -765,6 +875,8 @@ class Database:
             # Step 5: Build result structure
             result.append({
                 'order_detail_id': order_detail_id,
+                'supplier_reference_id': supplier_reference_id,
+                'fulfillment_instance_id': fulfillment_instance_id,  # NEW: Multi-instance support
                 'supplier_baseline': {
                     'supplier_id': status_row['supplier_id'],
                     'amount': baseline_amount,

@@ -152,14 +152,15 @@ class PricingUpdatedEvent(BaseModel):
 class PaymentInstrument(BaseModel):
     """
     Masked payment instrument details.
-    Only one of va/card/ewallet/bnpl should be populated based on type.
+    Only one of va/card/ewallet/bnpl/loyalty should be populated based on type.
     """
-    type: str  # "VA", "CARD", "EWALLET", "BNPL", "QR"
+    type: str  # "VA", "CARD", "EWALLET", "BNPL", "QR", "LOYALTY"
     va: Optional[Dict[str, Any]] = None  # e.g., {"bank": "BNI", "account_number_masked": "8060•••••••1234"}
     card: Optional[Dict[str, Any]] = None  # e.g., {"last4": "1234", "brand": "VISA", "exp_month": 12}
     ewallet: Optional[Dict[str, Any]] = None  # e.g., {"provider": "GOPAY", "phone_masked": "0812•••••••789"}
     bnpl: Optional[Dict[str, Any]] = None  # e.g., {"provider": "KREDIVO", "contract_id": "KRD-123"}
-    display_hint: Optional[str] = None  # e.g., "BNI VA ••••1234"
+    loyalty: Optional[Dict[str, Any]] = None  # e.g., {"points_used": 416898, "account_id": "21153418", "program": "TiketPoints"}
+    display_hint: Optional[str] = None  # e.g., "BNI VA ••••1234", "TiketPoints (416,898 points)"
     psp_ref: Optional[str] = None  # Payment Service Provider reference
     psp_trace_id: Optional[str] = None  # PSP trace/transaction ID
 
@@ -179,14 +180,14 @@ class Payment(BaseModel):
     status: str  # "Authorized", "Captured", "Refunded", etc.
     payment_id: Optional[str] = None  # Payment intent ID (shown as Intent ID in UI)
     pg_reference_id: Optional[str] = None  # Payment gateway reference (shown as PG Reference in UI)
-    payment_method: PaymentMethod
+    payment_method: Union[PaymentMethod, str]  # Accept both object and string for backward compatibility
     currency: str
     authorized_amount: Optional[int] = None
     authorized_at: Optional[str] = None
     captured_amount: Optional[int] = None  # Amount captured in this event
     captured_amount_total: Optional[int] = None  # Running total of all captures
     captured_at: Optional[str] = None
-    instrument: Optional[PaymentInstrument] = None  # Masked instrument details
+    instrument: Optional[Union[PaymentInstrument, Dict[str, Any]]] = None  # Masked instrument details (flexible for legacy)
     bnpl_plan: Optional[Dict[str, Any]] = None  # For BNPL-specific data
 
 
@@ -282,6 +283,7 @@ class Supplier(BaseModel):
     supplier_id: str
     booking_code: Optional[str] = None
     supplier_ref: Optional[str] = None
+    fulfillment_instance_id: Optional[str] = None  # NEW: For multi-instance payables (passes redemptions, train legs, etc.)
     amount_due: Optional[int] = None
     amount_basis: Optional[Union[AmountBasis, str]] = None  # NEW: "gross" or "net"
     currency: Optional[str] = None

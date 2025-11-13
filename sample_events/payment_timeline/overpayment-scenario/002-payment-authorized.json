@@ -1,0 +1,28 @@
+{
+  "event_id": "evt_payment_authorized_001",
+  "event_type": "PaymentLifecycle",
+  "schema_version": "payment.timeline.v1",
+  "order_id": "ORD-8001",
+  "emitted_at": "2025-01-15T10:05:00Z",
+  "emitter_service": "payment-service",
+  "payment": {
+    "status": "Authorized",
+    "payment_id": "pi_002",
+    "pg_reference_id": "PG-REF-8001-AUTH",
+    "payment_method": {
+      "channel": "BANK_TRANSFER",
+      "provider": "BCA",
+      "brand": "BCA Virtual Account"
+    },
+    "currency": "IDR",
+    "authorized_amount": 1000000,
+    "captured_amount": 0,
+    "captured_amount_total": 0,
+    "instrument": {
+      "type": "VA",
+      "account_number": "8001234567890",
+      "account_name": "John Doe"
+    }
+  },
+  "idempotency_key": "payment_ORD-8001_authorized_001"
+}

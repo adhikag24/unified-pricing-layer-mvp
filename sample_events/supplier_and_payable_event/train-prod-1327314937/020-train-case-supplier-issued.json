@@ -9,6 +9,7 @@
     "supplier_id": "KAI",
     "booking_code": "UQH8HTG",
     "supplier_ref": "UQH8HTG",
+    "fulfillment_instance_id": null,
     "amount_due": 1614500,
     "amount_basis": "net",
     "currency": "IDR",

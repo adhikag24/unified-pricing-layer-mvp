@@ -12,6 +12,7 @@
     "supplier_id": "NATIVE",
     "booking_code": "NATIVE-12345",
     "supplier_ref": "REF-NATIVE-001",
+    "fulfillment_instance_id": null,
     "amount_due": 1500000,
     "amount_basis": "gross",
     "currency": "IDR",

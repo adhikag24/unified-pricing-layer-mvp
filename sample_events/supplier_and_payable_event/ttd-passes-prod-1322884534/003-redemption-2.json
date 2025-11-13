@@ -1,0 +1,79 @@
+{
+  "event_id": "evt_supplier_1757809307001_redeemed",
+  "event_type": "SupplierLifecycleEvent",
+  "schema_version": "supplier.timeline.v2",
+  "order_id": "1322884534",
+  "order_detail_id": "1359185528",
+  "emitted_at": "2025-09-13T06:21:42.612Z",
+  "emitter_service": "entertainment-service",
+  "idempotency_key": "entertainment_1757809307001_redeemed_v1",
+
+  "supplier": {
+    "status": "ISSUED",
+    "supplier_id": "NATIVE",
+    "booking_code": "PKG-68c50c5284a6bf6699346e09",
+    "supplier_ref": "PKG-68c50c5284a6bf6699346e09",
+    "fulfillment_instance_id": "ticket_code_1757809307001",
+    "amount_due": 150000,
+    "amount_basis": "gross",
+    "currency": "IDR",
+    "fx_context": {
+      "timestamp_fx_rate": "2025-09-13T06:21:42Z",
+      "payment_currency": "IDR",
+      "supply_currency": "IDR",
+      "record_currency": "IDR",
+      "gbv_currency": "IDR",
+      "payment_value": 150000,
+      "supply_to_payment_fx_rate": 1.0,
+      "supply_to_record_fx_rate": 1.0,
+      "payment_to_gbv_fx_rate": 1.0,
+      "source": "Treasury"
+    },
+    "entity_context": {
+      "entity_code": "GTN"
+    }
+  },
+  "parties": [
+    {
+      "party_type": "SUPPLIER",
+      "party_id": "NATIVE",
+      "party_name": "Playtopia Adventure Margo City Depok",
+      "lines": [
+        {
+          "obligation_type": "COMMISSION",
+          "amount": 20025,
+          "amount_effect": "DECREASES_PAYABLE",
+          "currency": "IDR",
+          "description": "Supplier cost for pass redemption (ticket_code_1757809307001)",
+          "calculation": {
+            "basis": "per_redemption VAT excluded",
+            "rate": 0.15
+          }
+        },
+        {
+          "obligation_type": "COMMISSION_VAT",
+          "amount": 2475,
+          "amount_effect": "DECREASES_PAYABLE",
+          "currency": "IDR",
+          "description": "VAT on commission (11%)",
+          "calculation": {
+            "basis": "per_redemption",
+            "rate": 0.1
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "redemption_timestamp": "2025-09-13T06:21:42.612Z",
+    "ticket_code": "1757809307001",
+    "entertainment_order_id": "1757809306",
+    "entertainment_order_detail_id": "1757809307",
+    "price_tier_category": "CHILD",
+    "customer_price_amount": 150000,
+    "base_price_amount": 127500,
+    "commission_amount": 22500,
+    "net_commission_amount": 20025,
+    "redeemer_email_address": "[ENCRYPTED]"
+  }
+}

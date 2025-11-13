@@ -1,0 +1,101 @@
+{
+  "event_id": "evt_pricing_a_001",
+  "event_type": "PricingUpdated",
+  "schema_version": "pricing.commerce.v1",
+  "order_id": "1328340013",
+  "emitted_at": "2025-11-10T11:00:00Z",
+  "emitter_service": "flight-service",
+  "vertical": "flight",
+  "customer_context": {
+      "reseller_type_name": "B2B_CORPORATE",
+      "reseller_id": "1111111111",
+      "reseller_name": "Geolog",
+      "account_id": "90648830"
+    },
+  "detail_context": {
+    "order_detail_id": "1366814317",
+    "entity_context": {
+      "entity_code": "GTN"
+    }
+  },
+  "components": [
+    {
+      "component_type": "BaseFare",
+      "amount": 3332000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "CGK-SOQ"
+    },
+    {
+      "component_type": "Tax",
+      "amount": 905120,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "Airport tax and fuel surcharge"
+    },
+    {
+      "component_type": "Surcharge",
+      "amount": 5000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "IWJR"
+    },
+    {
+      "component_type": "BaseFare",
+      "amount": 3332000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357116"
+      },
+      "description": "CGK-SOQ"
+    },
+    {
+      "component_type": "Tax",
+      "amount": 905120,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357116"
+      },
+      "description": "Airport tax and fuel surcharge"
+    },
+    {
+      "component_type": "Surcharge",
+      "amount": 5000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357116"
+      },
+      "description": "IWJR"
+    },
+    {
+      "component_type": "Subsidy",
+      "amount": -31816,
+      "currency": "IDR",
+      "dimensions": {
+        "funding_source": "tiket"
+      }
+    },
+    {
+      "component_type": "PlatformFee",
+      "amount": 45000,
+      "currency": "IDR",
+      "dimensions": {}
+    }
+  ],
+  "meta": {
+    "route": "CGK-SOQ",
+    "travel_date": "2025-11-15"
+  }
+}

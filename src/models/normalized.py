@@ -73,6 +73,7 @@ class NormalizedSupplierTimeline(BaseModel):
     supplier_id: str
     booking_code: Optional[str] = None
     supplier_reference_id: Optional[str] = None
+    fulfillment_instance_id: Optional[str] = None  # NEW: For multi-instance payables (passes, multi-ride, etc.)
     amount: Optional[int] = None
     currency: Optional[str] = None
     status: Optional[str] = None  # For status-driven obligation model

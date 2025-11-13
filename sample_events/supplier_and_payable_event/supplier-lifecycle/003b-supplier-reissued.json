@@ -1,0 +1,70 @@
+{
+    "event_id": "evt_issued_003",
+    "event_type": "SupplierLifecycleEvent",
+    "schema_version": "supplier.timeline.v2",
+    "order_id": "ORD-9001",
+    "order_detail_id": "OD-001",
+    "emitted_at": "2025-11-11T09:14:17.300980",
+    "emitter_service": "accommodation-service",
+    "idempotency_key": "accommodation_order_OD-001_issued_v1",
+    "supplier": {
+      "status": "ISSUED",
+      "supplier_id": "EXPEDIA",
+      "booking_code": "EXPEDIA-12345",
+      "supplier_ref": "REF-EXPEDIA-001",
+      "fulfillment_instance_id": null,
+      "amount_due": 1000000,
+      "amount_basis": "gross",
+      "currency": "IDR",
+      "fx_context": {
+        "timestamp_fx_rate": "2025-01-10T10:00:00Z",
+        "payment_currency": "IDR",
+        "supply_currency": "IDR",
+        "record_currency": "IDR",
+        "gbv_currency": "IDR",
+        "payment_value": 1000000,
+        "supply_to_payment_fx_rate": 1.0,
+        "supply_to_record_fx_rate": 1.0,
+        "payment_to_gbv_fx_rate": 1.0,
+        "source": "Treasury"
+      },
+      "entity_context": {
+        "entity_code": "TNPL"
+      }
+    },
+    "parties": [
+      {
+        "party_type": "AFFILIATE",
+        "party_id": "100005361",
+        "party_name": "Partner CFD Non IDR - Accommodation - Invoicing",
+        "lines": [
+          {
+            "obligation_type": "AFFILIATE_COMMISSION",
+            "amount": 4694,
+            "amount_effect": "INCREASES_PAYABLE",
+            "currency": "IDR",
+            "calculation": {
+              "basis": "markup",
+              "rate": 0.1
+            },
+            "description": "10% affiliate commission on markup"
+          },
+          {
+            "obligation_type": "TAX_VAT_ON_AFFILIATE_COMMISSION",
+            "amount": 516,
+            "amount_effect": "INCREASES_PAYABLE",
+            "currency": "IDR",
+            "calculation": {
+              "basis": "affiliate_commission",
+              "rate": 0.11
+            },
+            "description": "11% VAT on affiliate commission"
+          }
+        ]
+      }
+    ],
+    "meta": {
+      "booking_source": "native_accommodation",
+      "travel_date": "2025-02-15"
+    }
+  }

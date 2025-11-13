@@ -1,0 +1,79 @@
+{
+  "event_id": "evt_refund_issued_a_001",
+  "event_type": "RefundIssued",
+  "schema_version": "refund.components.v1",
+  "order_id": "1328340013",
+  "refund_id": "4534351",
+  "emitted_at": "2025-11-11T04:20:21Z",
+  "emitter_service": "refund-service",
+  "components": [
+    {
+      "component_type": "BaseFare",
+      "amount": -3332000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "Refund of BaseFare for reschedule",
+      "refund_of_component_semantic_id": "cs-1328340013-OD-1366814317-PAS-280357115-BaseFare",
+      "meta": {
+        "refund_id": "4534351",
+        "to": "deposit"
+      }
+    },
+    {
+      "component_type": "Tax",
+      "amount": -905120,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "Refund of Tax for reschedule",
+      "refund_of_component_semantic_id": "cs-1328340013-OD-1366814317-PAS-280357115-Tax",
+      "meta": {
+        "refund_id": "4534351",
+        "to": "deposit"
+      }
+    },
+    {
+      "component_type": "Surcharge",
+      "amount": -5000,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317",
+        "passenger_id": "280357115"
+      },
+      "description": "Refund of PlatformFee for reschedule",
+      "refund_of_component_semantic_id": "cs-1328340013-OD-1366814317-PAS-280357115-Surcharge",
+      "meta": {
+        "refund_id": "4534351",
+        "to": "deposit"
+      }
+    },
+    {
+      "component_type": "RescheduleFee",
+      "amount": 1089630,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1328340013"
+      }
+    },
+    {
+      "component_type": "RefundDeposit",
+      "amount": 3136582,
+      "currency": "IDR",
+      "dimensions": {
+        "order_detail_id": "1366814317"
+      },
+      "description": "Customer credit deposit for new order",
+      "meta": {
+        "credit_id": "CRD-A-001",
+        "reason": "reschedule",
+        "target_order_id": "ORD-FLIGHT-B-001",
+        "calculation": "1,000,000 (refund) - 200,000 (fee) = 800,000 (deposit)"
+      }
+    }
+  ]
+}

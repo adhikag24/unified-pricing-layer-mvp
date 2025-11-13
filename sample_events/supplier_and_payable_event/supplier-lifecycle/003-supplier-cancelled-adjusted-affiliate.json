@@ -2,24 +2,20 @@
   "event_id": "evt_cancelled_adjusted_003",
   "event_type": "SupplierLifecycleEvent",
   "schema_version": "supplier.timeline.v2",
-  "order_id": "ORD-9002",
-  "order_detail_id": "OD-002",
+  "order_id": "ORD-9001",
+  "order_detail_id": "OD-001",
   "emitted_at": "2025-01-12T16:00:00Z",
   "emitter_service": "ttd-service",
-  "idempotency_key": "ttd_order_OD-002_cancelled_v2",
+  "idempotency_key": "ttd_order_OD-001_cancelled_v2",
   "supplier": {
     "status": "CancelledWithFee",
     "supplier_id": "AGODA",
     "booking_code": "AGODA-98765",
     "supplier_ref": "REF-AGODA-002",
+    "fulfillment_instance_id": null,
     "amount_due": null,
     "amount_basis": null,
     "currency": "IDR",
-    "cancellation": {
-      "fee_amount": 75000,
-      "fee_currency": "IDR",
-      "replaces_original_cost": true
-    },
     "fx_context": {
       "timestamp_fx_rate": "2025-01-12T16:00:00Z",
       "payment_currency": "IDR",
@@ -37,6 +33,24 @@
     }
   },
   "parties": [
+    {
+      "party_type": "SUPPLIER",
+      "party_id": "AGODA",
+      "party_name": "Agoda",
+      "lines": [
+        {
+          "obligation_type": "CANCELLATION_FEE",
+          "amount": 75000,
+          "amount_effect": "INCREASES_PAYABLE",
+          "currency": "IDR",
+          "calculation": {
+            "basis": "supplier_policy",
+            "rate": null
+          },
+          "description": "Non-refundable cancellation fee per supplier policy"
+        }
+      ]
+    },
     {
       "party_type": "AFFILIATE",
       "party_id": "100005361",
